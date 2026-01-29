@@ -52,13 +52,13 @@
       loop_control:
         label: "{{ item }}"
 
-    - name: "Remove install base"
+    - name: "Remove install directory"
       file:
         path: "{{ install_base }}"
         state: absent
       become: true
 
-    - name: "Remove data base"
+    - name: "Remove data directory"
       file:
         path: "{{ data_base }}"
         state: absent

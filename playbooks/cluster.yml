@@ -22,17 +22,6 @@
     cluster_mode: "{{ cluster_mode | default('non-ha') }}"
     ha_enabled: "{{ cluster_mode == 'ha' }}"
   pre_tasks:
-    - name: "Pre-install: Ensure python3 present"
-      raw: |
-        if command -v apt-get >/dev/null 2>&1; then sudo -n apt-get update -y && sudo -n apt-get install -y python3 || true;
-        elif command -v dnf >/dev/null 2>&1; then sudo -n dnf install -y python3 || true;
-        elif command -v yum >/dev/null 2>&1; then sudo -n yum install -y python3 || true;
-        elif command -v zypper >/dev/null 2>&1; then sudo -n zypper --non-interactive in -y python3 || true;
-        fi
-      args:
-        executable: /bin/bash
-      changed_when: false
-      failed_when: false
 
     - name: "Pre-install: Gather facts"
       setup:
@@ -72,3 +61,53 @@
       tags: ["ozone_ui"]
     - role: ozone_smoke
       tags: ["ozone_smoke"]
+
+  post_tasks:
+    - name: "Build UI endpoints display lines"
+      set_fact:
+        ui_display_lines: >-
+          {{
+            [
+              '',
+              '==========================================',
+              '   Ozone Cluster UI Endpoints',
+              '==========================================',
+              '',
+              'OM UI:'
+            ] +
+            (endpoint_urls.om | map('regex_replace', '^', '  - ') | list) +
+            ['', 'SCM UI:'] +
+            (endpoint_urls.scm | map('regex_replace', '^', '  - ') | list) +
+            ['', 'Recon UI:'] +
+            ((endpoint_urls.recon | length > 0) | ternary(
+              endpoint_urls.recon | map('regex_replace', '^', '  - ') | list,
+              ['  - Not configured']
+            )) +
+            ['', 'S3 Gateway (HTTP):'] +
+            ((endpoint_urls.s3g_http | length > 0) | ternary(
+              endpoint_urls.s3g_http | map('regex_replace', '^', '  - ') | list,
+              ['  - Not configured']
+            )) +
+            ['', 'S3 Gateway (Admin):'] +
+            ((endpoint_urls.s3g_admin | length > 0) | ternary(
+              endpoint_urls.s3g_admin | map('regex_replace', '^', '  - ') | list,
+              ['  - Not configured']
+            )) +
+            [
+              '',
+              '==========================================',
+              'UI endpoints also saved to: ' ~ (controller_logs_dir | default('logs')) ~ '/endpoint_urls.json',
+              '==========================================',
+              ''
+            ]
+          }}
+      run_once: true
+      when: endpoint_urls is defined
+      tags: ["always"]
+
+    - name: "Display UI Endpoints Summary"
+      debug:
+        msg: "{{ ui_display_lines }}"
+      run_once: true
+      when: endpoint_urls is defined
+      tags: ["always"]

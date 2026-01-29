@@ -32,7 +32,8 @@ Ports and service behavior follow Ozone defaults; consult the official documenta
 
 ## Software Requirements
 
-- Controller: Python 3.10–3.12 (prefer 3.11) and pip
+### Controller node requirements
+- Python 3.10–3.12 (prefer 3.11) and pip
 - Ansible Community 10.x (ansible-core 2.17.x)
 - Python packages (installed via `requirements.txt`):
   - `ansible-core==2.17.*`
@@ -43,10 +44,55 @@ Ports and service behavior follow Ozone defaults; consult the official documenta
     - RHEL/CentOS/Rocky: `sudo yum install -y sshpass` or `sudo dnf install -y sshpass`
     - SUSE: `sudo zypper in -y sshpass`
 
-### Controller node requirements
-- Can be local or remote.
-- Must be on the same network as the target hosts.
-- Requires SSH access (key or password).
+### Managed node requirements (target hosts)
+- **Python 3.7 or higher** (required by Ansible 2.17)
+- SSH server enabled
+- Sudo access (if using `--use-sudo`)
+
+**⚠️ Known Issue: CentOS 8 / RHEL 8 with Python 3.6**
+
+On CentOS 8/RHEL 8, the system's `dnf` package manager may use Python 3.6 (`/usr/libexec/platform-python`), and the DNF Python module (`python3-dnf`) is only available for Python 3.6, not for Python 3.9+. 
+
+The installer works around this by using direct shell commands (e.g., `/usr/libexec/platform-python /usr/bin/dnf install`) for package installation rather than Ansible's package module.
+
+#### Python Version Requirements by OS
+
+| Operating System | Default Python | Available Versions | Installation Command |
+|-----------------|----------------|-------------------|---------------------|
+| RHEL 9+ / Rocky 9+ | Python 3.9+ ✅ | 3.11, 3.9 | `sudo yum install -y python3.11` |
+| RHEL 8 / Rocky 8 / CentOS 8 | Python 3.6 ❌ | 3.9, 3.8 (python39, python38) | `sudo yum install -y python39` |
+| CentOS 7 | Python 3.6 ❌ | 3.6 only | Must use EPEL or SCL for newer versions |
+| Ubuntu 20.04+ | Python 3.8+ ✅ | 3.11, 3.10, 3.9, 3.8 | `sudo apt-get install -y python3.11` |
+| Debian 11+ | Python 3.9+ ✅ | 3.11, 3.9 | `sudo apt-get install -y python3.11` |
+
+**Important**: If your managed nodes have Python 3.6 or older, you must upgrade:
+
+```bash
+# CentOS 8 / RHEL 8 / Rocky 8 (most common)
+sudo yum install -y python39
+# Verify: /usr/bin/python3.9 --version
+
+# RHEL 9+ / Rocky 9+
+sudo yum install -y python3.11
+# Verify: /usr/bin/python3.11 --version
+
+# Ubuntu / Debian
+sudo apt-get update && sudo apt-get install -y python3.9
+# Verify: /usr/bin/python3.9 --version
+```
+
+**Then specify the Python interpreter when running the installer:**
+```bash
+# For CentOS 8 / RHEL 8
+python3 ozone_installer.py -H hosts -v 2.0.0 --python-interpreter /usr/bin/python3.9
+
+# For RHEL 9+
+python3 ozone_installer.py -H hosts -v 2.0.0 --python-interpreter /usr/bin/python3.11
+```
+
+### Network and access requirements
+- Controller must be on the same network as the target hosts
+- Controller requires SSH access (key or password) to all target hosts
 
 ### Run on the controller node
 ```bash
@@ -70,16 +116,52 @@ python3 ozone_installer.py -H host1.domain -v 2.0.0
 # HA upstream (3+ hosts) - mode auto-detected
 python3 ozone_installer.py -H "host{1..3}.domain" -v 2.0.0
 
+# Using host file instead of CLI (one host per line, supports user@host:port format)
+python3 ozone_installer.py -F hosts.txt -v 2.0.0
+
 # Local snapshot build
 python3 ozone_installer.py -H host1 -v local --local-path /path/to/share/ozone-2.1.0-SNAPSHOT
 
 # Cleanup and reinstall
 python3 ozone_installer.py --clean -H "host{1..3}.domain" -v 2.0.0
 
+# Specify Python interpreter (if managed nodes have Python 3.6 or need specific version)
+python3 ozone_installer.py -H "host{1..3}.domain" -v 2.0.0 --python-interpreter /usr/bin/python3.9
+
+# Verbose mode for debugging (passes -vvv to Ansible)
+python3 ozone_installer.py -H "host{1..3}.domain" -v 2.0.0 --verbose
+# OR with short flag
+python3 ozone_installer.py -H "host{1..3}.domain" -v 2.0.0 -V
+
 # Notes on cleanup
 # - During a normal install, you'll be asked whether to cleanup an existing install (if present). Default is No.
 # - Use --clean to cleanup without prompting before reinstall.
 ```
+
+### Python interpreter configuration
+
+The installer requires Python 3.7+ on managed nodes (Ansible 2.17 requirement).
+
+**You must configure the Python interpreter if your managed nodes don't have Python 3.7+ as the default `/usr/bin/python3`.**
+
+**Via CLI (recommended):**
+```bash
+python3 ozone_installer.py -H hosts -v 2.0.0 --python-interpreter /usr/bin/python3.9
+```
+
+**Via group_vars (for static inventory):**
+```yaml
+# inventories/dev/group_vars/all.yml
+ansible_python_interpreter: /usr/bin/python3.9  # or /usr/bin/python39 for CentOS 8
+```
+
+**Via dynamic inventory:**
+Add `ansible_python_interpreter=/usr/bin/python3.9` to each host line in your inventory.
+
+### Host file format
+
+When using `-F/--host-file`, create a text file with one host per line. See `hosts.txt.example` for a complete example.
+
 
 ### Interactive prompts and version selection
 - The installer uses `click` for interactive prompts when available (TTY).
@@ -98,6 +180,33 @@ python3 ozone_installer.py -H host1.domain -v 2.0.0 --resume
 # Direct Ansible
 ANSIBLE_CONFIG=ansible.cfg ansible-playbook -i inventories/dev/hosts.ini playbooks/cluster.yml \
   --start-at-task "$(head -n1 logs/last_failed_task.txt)"
+```
+
+### Debugging and Troubleshooting
+
+**Verbose Mode:** For detailed Ansible output (useful for debugging failures):
+
+```bash
+# Python wrapper - passes -vvv to Ansible
+python3 ozone_installer.py -H hosts -v 2.0.0 --verbose
+# OR with short flag
+python3 ozone_installer.py -H hosts -v 2.0.0 -V
+```
+
+The verbose flag provides:
+- Detailed task execution information
+- Variable values at each step
+- Full error tracebacks
+- SSH connection details
+- Module arguments and return values
+
+**Check Logs:**
+```bash
+# View the latest installer log
+tail -f logs/ansible-*.log
+
+# Check for task failures
+grep -i "fatal\|error" logs/ansible-*.log
 ```
 
 2) Direct Ansible (run playbooks yourself)

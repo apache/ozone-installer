@@ -13,30 +13,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-[defaults]
-inventory = inventories/dev/hosts.ini
-stdout_callback = default
-retry_files_enabled = False
-gathering = smart
-forks = 20
-strategy = linear
-; strategy = free for concurrent tasks
-timeout = 30
-roles_path = roles
-log_path = logs/ansible.log
-bin_ansible_callbacks = True
-callback_plugins = callback_plugins
-callbacks_enabled = timer, profile_tasks, last_failed ; for execution time profiling and resume hints
-deprecation_warnings = False
-host_key_checking = False
-remote_tmp = /tmp/.ansible-${USER}
+# Example host file for ozone_installer.py
+# Usage: python3 ozone_installer.py -F hosts.txt.example -v 2.0.0
+#
+# Format: One host per line
+# Supports: user@host:port
+# Comments and empty lines are ignored
 
-[privilege_escalation]
-become = True
-become_method = sudo
+# Simple hostname
+# host1.example.com
 
-[ssh_connection]
-pipelining = True
-ssh_args = -o ControlMaster=auto -o ControlPersist=60s -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+# With SSH user
+# ozone@host2.example.com
 
+# With custom SSH port
+# host3.example.com:2222
 
+# Combined user and port
+# admin@host4.example.com:2222
+
+# For HA deployment (3+ hosts recommended)
+# host1.example.com
+# host2.example.com
+# host3.example.com
+
+# For Non-HA deployment (single host)
+# host1.example.com

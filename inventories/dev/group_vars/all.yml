@@ -52,5 +52,3 @@ ssh_private_key_path: ""      # optional path to private key to copy for cluster
 # Markers for profile management
 JAVA_MARKER: "Apache Ozone Installer Java Home"
 ENV_MARKER: "Apache Ozone Installer Env"
-
-

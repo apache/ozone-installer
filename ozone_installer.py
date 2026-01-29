@@ -79,6 +79,7 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
         description="Ozone Ansible Installer (Python trigger) - mirrors bash installer flags"
     )
     p.add_argument("-H", "--host", help="Target host(s). Non-HA: host. HA: comma-separated or brace expansion host{1..n}")
+    p.add_argument("-F", "--host-file", help="File containing target hosts (one per line, supports @, : for user/port)")
     p.add_argument("-m", "--auth-method", choices=["password", "key"], default=None)
     p.add_argument("-p", "--password", help="SSH password (for --auth-method=password)")
     p.add_argument("-k", "--keyfile", help="SSH private key file (for --auth-method=key)")
@@ -98,6 +99,8 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
     # Local extras
     p.add_argument("--local-path", help="Path to local Ozone build (contains bin/ozone)")
     p.add_argument("--dl-url", help="Upstream download base URL")
+    p.add_argument("--python-interpreter", help="Python interpreter for managed nodes (e.g., /usr/bin/python3.9). If not specified, Ansible will auto-detect.")
+    p.add_argument("--verbose", "-V", action="store_true", help="Verbose output (passes -vvv to Ansible for detailed debugging)")
     p.add_argument("--yes", action="store_true", help="Non-interactive; accept defaults for missing values")
     p.add_argument("-R", "--resume", action="store_true", help="Resume play at last failed task (if available)")
     return p.parse_args(argv)
@@ -293,12 +296,44 @@ def parse_hosts(hosts_raw: Optional[str]) -> List[dict]:
             out.append({"host": host, "user": user, "port": port})
     return out
 
+def read_hosts_from_file(filepath: str) -> Optional[str]:
+    """
+    Reads hosts from a file (one host per line).
+    Lines starting with # are treated as comments and ignored.
+    Empty lines are ignored.
+    Supports same format as CLI: user@host:port
+    Returns comma-separated host string suitable for parse_hosts().
+    """
+    logger = get_logger()
+    try:
+        path = Path(filepath)
+        if not path.exists():
+            logger.error(f"Host file not found: {filepath}")
+            return None
+        hosts = []
+        with path.open('r') as f:
+            for line in f:
+                line = line.strip()
+                # Skip empty lines and comments
+                if not line or line.startswith('#'):
+                    continue
+                hosts.append(line)
+        if hosts:
+            logger.info(f"Read {len(hosts)} host(s) from {filepath}")
+            return ','.join(hosts)
+        else:
+            logger.error(f"No valid hosts found in {filepath}")
+            return None
+    except Exception as e:
+        logger.error(f"Error reading host file {filepath}: {e}")
+        return None
+
 def auto_cluster_mode(hosts: List[dict], forced: Optional[str] = None) -> str:
     if forced in ("non-ha", "ha"):
         return forced
     return "ha" if len(hosts) >= 3 else "non-ha"
 
-def build_inventory(hosts: List[dict], ssh_user: Optional[str] = None, keyfile: Optional[str] = None, password: Optional[str] = None, cluster_mode: str = "non-ha") -> str:
+def build_inventory(hosts: List[dict], ssh_user: Optional[str] = None, keyfile: Optional[str] = None, password: Optional[str] = None, cluster_mode: str = "non-ha", python_interpreter: Optional[str] = None) -> str:
     """
     Returns INI inventory text for our groups: [om], [scm], [datanodes], [recon], [s3g]
     """
@@ -309,7 +344,7 @@ def build_inventory(hosts: List[dict], ssh_user: Optional[str] = None, keyfile: 
         h = hosts[0]
         return _render_inv_groups(
             om=[h], scm=[h], dn=hosts, recon=[h], s3g=[h],
-            ssh_user=ssh_user, keyfile=keyfile, password=password
+            ssh_user=ssh_user, keyfile=keyfile, password=password, python_interpreter=python_interpreter
         )
     # HA: first 3 go to OM and SCM; all to datanodes; recon is first if present
     om = hosts[:3] if len(hosts) >= 3 else hosts
@@ -318,9 +353,9 @@ def build_inventory(hosts: List[dict], ssh_user: Optional[str] = None, keyfile: 
     recon = [hosts[0]]
     s3g = [hosts[0]]
     return _render_inv_groups(om=om, scm=scm, dn=dn, recon=recon, s3g=s3g,
-                              ssh_user=ssh_user, keyfile=keyfile, password=password)
+                              ssh_user=ssh_user, keyfile=keyfile, password=password, python_interpreter=python_interpreter)
 
-def _render_inv_groups(om: List[dict], scm: List[dict], dn: List[dict], recon: List[dict], s3g: List[dict], ssh_user: Optional[str] = None, keyfile: Optional[str] = None, password: Optional[str] = None) -> str:
+def _render_inv_groups(om: List[dict], scm: List[dict], dn: List[dict], recon: List[dict], s3g: List[dict], ssh_user: Optional[str] = None, keyfile: Optional[str] = None, password: Optional[str] = None, python_interpreter: Optional[str] = None) -> str:
     def hostline(hd):
         parts = [hd["host"]]
         if ssh_user or hd.get("user"):
@@ -331,6 +366,8 @@ def _render_inv_groups(om: List[dict], scm: List[dict], dn: List[dict], recon: L
             parts.append(f"ansible_ssh_private_key_file={shlex.quote(str(keyfile))}")
         if password:
             parts.append(f"ansible_password={shlex.quote(password)}")
+        if python_interpreter:
+            parts.append(f"ansible_python_interpreter={python_interpreter}")
         return " ".join(parts)
 
     sections = []
@@ -347,13 +384,15 @@ def _render_inv_groups(om: List[dict], scm: List[dict], dn: List[dict], recon: L
     sections.append("\n")
     return "\n".join(sections)
 
-def run_playbook(playbook: Path, inventory_path: Path, extra_vars_path: Path, ask_pass: bool = False, become: bool = True, start_at_task: Optional[str] = None, tags: Optional[List[str]] = None) -> int:
+def run_playbook(playbook: Path, inventory_path: Path, extra_vars_path: Path, ask_pass: bool = False, become: bool = True, start_at_task: Optional[str] = None, tags: Optional[List[str]] = None, verbose: bool = False) -> int:
     cmd = [
         "ansible-playbook",
         "-i", str(inventory_path),
         str(playbook),
         "-e", f"@{extra_vars_path}",
     ]
+    if verbose:
+        cmd.append("-vvv")
     if ask_pass:
         cmd.append("-k")
     if become:
@@ -398,7 +437,15 @@ def main(argv: List[str]) -> int:
 
     # Gather inputs interactively where missing
     hosts_raw_default = (last_cfg.get("hosts_raw") if last_cfg else None)
-    hosts_raw = args.host or hosts_raw_default or prompt("Target host(s) [non-ha: host | HA: h1,h2,h3 or brace expansion]", default="", yes_mode=yes)
+    # Check if hosts are provided via file first, then CLI, then default/prompt
+    if args.host_file:
+        hosts_raw = read_hosts_from_file(args.host_file)
+        if not hosts_raw:
+            logger = get_logger()
+            logger.error(f"Error: Could not read hosts from file: {args.host_file}")
+            return 2
+    else:
+        hosts_raw = args.host or hosts_raw_default or prompt("Target host(s) [non-ha: host | HA: h1,h2,h3 or brace expansion]", default="", yes_mode=yes)
     hosts = parse_hosts(hosts_raw) if hosts_raw else []
     # Initialize per-run logger as soon as we have hosts_raw
     try:
@@ -414,7 +461,7 @@ def main(argv: List[str]) -> int:
         logger.info(f"Logging to: {run_log_path} (fallback)")
 
     if not hosts:
-        logger.error("Error: No hosts provided (-H/--host).")
+        logger.error("Error: No hosts provided (-H/--host or -F/--host-file).")
         return 2
     # Decide HA vs Non-HA with user input; default depends on host count
     resume_cluster_mode = (last_cfg.get("cluster_mode") if last_cfg else None)
@@ -424,7 +471,7 @@ def main(argv: List[str]) -> int:
         cluster_mode = resume_cluster_mode
     else:
         default_mode = "ha" if len(hosts) >= 3 else "non-ha"
-        selected = prompt("Deployment type (ha|non-ha)", default=default_mode, yes_mode=yes)
+        selected = prompt("Deployment type (option: ha or non-ha)", default=default_mode, yes_mode=yes)
         cluster_mode = (selected or default_mode).strip().lower()
         if cluster_mode not in ("ha", "non-ha"):
             cluster_mode = default_mode
@@ -446,19 +493,19 @@ def main(argv: List[str]) -> int:
             ozone_version = prompt("Ozone version (e.g., 2.1.0 | local)", default=DEFAULTS["ozone_version"], yes_mode=yes)
     jdk_major = args.jdk_version if args.jdk_version is not None else ((last_cfg.get("jdk_major") if last_cfg else None))
     if jdk_major is None:
-        _jdk_val = prompt("JDK major (17|21)", default=str(DEFAULTS["jdk_major"]), yes_mode=yes)
+        _jdk_val = prompt("JDK major (option: 17 or 21)", default=str(DEFAULTS["jdk_major"]), yes_mode=yes)
         try:
             jdk_major = int(str(_jdk_val)) if _jdk_val is not None else DEFAULTS["jdk_major"]
         except Exception:
             jdk_major = DEFAULTS["jdk_major"]
     install_base = args.install_dir or (last_cfg.get("install_base") if last_cfg else None) \
-        or prompt("Install base directory (binaries and configs; e.g., /opt/ozone)", default=DEFAULTS["install_base"], yes_mode=yes)
+        or prompt("Install directory (base directory path to store ozone binaries, configs and logs)", default=DEFAULTS["install_base"], yes_mode=yes)
     data_base = args.data_dir or (last_cfg.get("data_base") if last_cfg else None) \
-        or prompt("Data base directory (metadata and DN data; e.g., /data/ozone)", default=DEFAULTS["data_base"], yes_mode=yes)
+        or prompt("Data directory (base directory path to store ozone metadata and data)", default=DEFAULTS["data_base"], yes_mode=yes)
 
     # Auth (before service user/group)
     auth_method = args.auth_method or (last_cfg.get("auth_method") if last_cfg else None) \
-        or prompt("Auth method (key|password)", default="password", yes_mode=yes)
+        or prompt("SSH authentication method (option: key or password)", default="password", yes_mode=yes)
     if auth_method not in ("key", "password"):
         auth_method = "password"
     ssh_user = args.ssh_user or (last_cfg.get("ssh_user") if last_cfg else None) \
@@ -475,9 +522,9 @@ def main(argv: List[str]) -> int:
     elif auth_method == "key":
         password = None
     service_user = args.service_user or (last_cfg.get("service_user") if last_cfg else None) \
-        or prompt("Service user", default=DEFAULTS["service_user"], yes_mode=yes)
+        or prompt("Service user name ", default=DEFAULTS["service_user"], yes_mode=yes)
     service_group = args.service_group or (last_cfg.get("service_group") if last_cfg else None) \
-        or prompt("Service group", default=DEFAULTS["service_group"], yes_mode=yes)
+        or prompt("Service group name", default=DEFAULTS["service_group"], yes_mode=yes)
     dl_url = args.dl_url or (last_cfg.get("dl_url") if last_cfg else None) or DEFAULTS["dl_url"]
     start_after_install = (args.start or (last_cfg.get("start_after_install") if last_cfg else None)
                            or DEFAULTS["start_after_install"])
@@ -527,10 +574,10 @@ def main(argv: List[str]) -> int:
         ("Cluster mode", cluster_mode),
         ("Ozone version", str(ozone_version)),
         ("JDK major", str(jdk_major)),
-        ("Install base", str(install_base)),
-        ("Data base", str(data_base)),
+        ("Install directory", str(install_base)),
+        ("Data directory", str(data_base)),
         ("SSH user", str(ssh_user)),
-        ("Auth method", str(auth_method))
+        ("SSH auth method", str(auth_method))
     ]
     if keyfile:
         summary_rows.append(("Key file", str(keyfile)))
@@ -544,9 +591,16 @@ def main(argv: List[str]) -> int:
         logger.info("Aborted by user.")
         return 1
 
+    # Python interpreter (optional, auto-detected if not provided)
+    python_interpreter = args.python_interpreter or (last_cfg.get("python_interpreter") if last_cfg else None)
+    if python_interpreter:
+        logger.info(f"Using Python interpreter: {python_interpreter}")
+    else:
+        logger.info("Python interpreter will be auto-detected by playbook")
+    
     # Prepare dynamic inventory and extra-vars
     inventory_text = build_inventory(hosts, ssh_user=ssh_user, keyfile=keyfile, password=password,
-                                     cluster_mode=cluster_mode)
+                                     cluster_mode=cluster_mode, python_interpreter=python_interpreter)
     # Decide cleanup behavior up-front (so we can pass it into the unified play)
     do_cleanup = False
     if args.clean:
@@ -572,6 +626,10 @@ def main(argv: List[str]) -> int:
         "ENV_MARKER": DEFAULTS["ENV_MARKER"],
         "controller_logs_dir": str(LOGS_DIR),
     }
+    # Add Python interpreter if explicitly specified by user
+    if python_interpreter:
+        extra_vars["ansible_python_interpreter"] = python_interpreter
+        extra_vars["ansible_python_interpreter_discovery"] = "explicit"
     if ozone_version and ozone_version.lower() == "local":
         extra_vars.update({
             "local_shared_path": local_shared_path or "",
@@ -615,6 +673,7 @@ def main(argv: List[str]) -> int:
                 "use_sudo": bool(use_sudo),
                 "local_shared_path": local_shared_path or "",
                 "local_ozone_dirname": local_oz_dir or "",
+                "python_interpreter": python_interpreter or "",
             }, indent=2), encoding="utf-8")
         except Exception:
             # Fall back to temp files if persisting fails
@@ -639,7 +698,7 @@ def main(argv: List[str]) -> int:
                             use_tags = [role_name]
                 except Exception:
                     start_at = None
-        rc = run_playbook(playbook, inv_path, ev_path, ask_pass=ask_pass, become=True, start_at_task=start_at, tags=use_tags)
+        rc = run_playbook(playbook, inv_path, ev_path, ask_pass=ask_pass, become=True, start_at_task=start_at, tags=use_tags, verbose=args.verbose)
         if rc != 0:
             return rc
 

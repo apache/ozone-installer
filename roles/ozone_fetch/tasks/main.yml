@@ -84,6 +84,7 @@
   become: false
   vars:
     ansible_become: false
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
   command:
     argv:
       - tar
@@ -122,6 +123,7 @@
   become: false
   vars:
     ansible_become: false
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
   file:
     path: "/tmp/{{ local_ozone_dirname }}.tar.gz"
     state: absent

@@ -14,34 +14,30 @@
 # limitations under the License.
 
 ## Print and export service UI endpoints
-- name: "Compute service UI URLs"
+- name: "Get host lists for UI endpoints"
   set_fact:
     _om_hosts_ui: "{{ groups.get('om', []) | list }}"
     _scm_hosts_ui: "{{ groups.get('scm', []) | list }}"
     _recon_hosts_ui: "{{ groups.get('recon', []) | list }}"
     _s3g_hosts_ui: "{{ groups.get('s3g', []) | list }}"
-    ui_urls:
+
+- name: "Compute service UI URLs"
+  set_fact:
+    endpoint_urls:
       om: "{{ _om_hosts_ui | map('regex_replace','^(.*)$','http://\\1:9874') | list }}"
       scm: "{{ _scm_hosts_ui | map('regex_replace','^(.*)$','http://\\1:9876') | list }}"
       recon: "{{ (_recon_hosts_ui | length > 0) | ternary(['http://' + _recon_hosts_ui[0] + ':9888'], []) }}"
       s3g_http: "{{ _s3g_hosts_ui | map('regex_replace','^(.*)$','http://\\1:9878') | list }}"
       s3g_admin: "{{ _s3g_hosts_ui | map('regex_replace','^(.*)$','http://\\1:19878') | list }}"
 
-- name: "Service UI Endpoints"
-  debug:
-    msg:
-      - "OM UI: {{ ui_urls.om }}"
-      - "SCM UI: {{ ui_urls.scm }}"
-      - "Recon UI: {{ ui_urls.recon }}"
-      - "S3G HTTP: {{ ui_urls.s3g_http }}"
-      - "S3G Admin: {{ ui_urls.s3g_admin }}"
-  run_once: true
-
 - name: "Export UI endpoints to controller logs directory"
   copy:
-    content: "{{ ui_urls | to_nice_json }}"
-    dest: "{{ controller_logs_dir }}/ui_urls.json"
+    content: "{{ endpoint_urls | to_nice_json }}"
+    dest: "{{ controller_logs_dir }}/endpoint_urls.json"
     mode: "0644"
   delegate_to: localhost
+  become: false
   run_once: true
   when: controller_logs_dir is defined
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"

@@ -59,6 +59,7 @@
   become: false
   vars:
     last_vars_path: "{{ playbook_dir }}/../logs/last_vars.json"
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
   block:
     - name: "last_vars.json | Read"
       slurp:
