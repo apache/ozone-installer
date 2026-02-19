@@ -21,7 +21,7 @@
     owner: "{{ service_user }}"
     group: "{{ service_group }}"
     mode: "0755"
-  loop: "{{ [install_base] + [d ~ sub for d in (data_base_list | default([data_base | default('/data/ozone')])) for sub in ['', '/dn', '/meta']] }}"
+  loop: "{{ [install_base] + (data_base_list | default([data_base | default('/data/ozone')]) | product(['', '/dn', '/meta']) | map('join', '') | list) }}"
   become: true
 
 - name: "Ensure OZONE_HOME and PATH are in profile.d/ozone.sh"
