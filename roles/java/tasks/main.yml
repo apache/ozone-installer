@@ -49,7 +49,8 @@
   set_fact:
     ozone_runtime_env:
       JAVA_HOME: "{{ ozone_java_home }}"
-      PATH: "{{ (ansible_env.PATH | default('/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin')) }}:{{ install_base }}/current/bin{{ (':' + ozone_java_home + '/bin') if (ozone_java_home | length > 0) else '' }}"
+      OZONE_HOME: "{{ install_base }}/current"
+      PATH: "{{ install_base }}/current/bin:{{ (ansible_env.PATH | default('/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin')) }}{{ (':' + ozone_java_home + '/bin') if (ozone_java_home | length > 0) else '' }}"
       OZONE_CONF_DIR: "{{ install_base }}/current/etc/hadoop"
       HADOOP_CONF_DIR: "{{ install_base }}/current/etc/hadoop"
 

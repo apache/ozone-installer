@@ -31,6 +31,13 @@
     - name: "Pre-install: Gather facts"
       setup:
 
+    - name: "Pre-install: Install ACL package (needed for become_user when controller is macOS)"
+      package:
+        name: acl
+        state: present
+      when: ansible_os_family in ['Debian', 'RedHat', 'Suse']
+      become: true
+
     - name: "Pre-install: Ensure Ansible remote tmp exists"
       file:
         path: "{{ (ansible_env.TMPDIR | default('/tmp')) ~ '/.ansible-' ~ ansible_user_id }}"
