@@ -387,7 +387,7 @@ def build_inventory(
         scm = master_hosts[:3] if cluster_mode == "ha" and len(master_hosts) >= 3 else master_hosts[:1]
         recon = [master_hosts[0]]
         dn = worker_hosts
-        s3g = [worker_hosts[0]] if worker_hosts else []
+        s3g = worker_hosts
         return _render_inv_groups(
             om=om, scm=scm, dn=dn, recon=recon, s3g=s3g,
             ssh_user=ssh_user, keyfile=keyfile, password=password, python_interpreter=python_interpreter
