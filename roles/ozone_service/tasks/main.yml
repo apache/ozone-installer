@@ -27,7 +27,7 @@
         - name: "Initialize first SCM"
           command: "ozone scm --init"
           args:
-            creates: "{{ data_base }}/meta/scm"
+            creates: "{{ (data_base_list | first) | default(data_base) }}/meta/scm"
           when: (groups['scm'] | length > 0) and (inventory_hostname == groups['scm'][0])
           register: scm_init_first
           failed_when: scm_init_first.rc != 0
@@ -41,7 +41,7 @@
         - name: "Initialize first OM"
           command: "ozone om --init"
           args:
-            creates: "{{ data_base }}/meta/om"
+            creates: "{{ (data_base_list | first) | default(data_base) }}/meta/om"
           when: (groups['om'] | length > 0) and (inventory_hostname == groups['om'][0])
           register: om_init_first
           failed_when: om_init_first.rc != 0

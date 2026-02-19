@@ -85,7 +85,7 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
     p.add_argument("-k", "--keyfile", help="SSH private key file (for --auth-method=key)")
     p.add_argument("-v", "--version", help="Ozone version (e.g., 2.0.0) or 'local'")
     p.add_argument("-i", "--install-dir", help=f"Install root (default: {DEFAULTS['install_base']})")
-    p.add_argument("-d", "--data-dir", help=f"Data root (default: {DEFAULTS['data_base']})")
+    p.add_argument("-d", "--data-dir", help=f"Data root(s), comma-separated for multiple (default: {DEFAULTS['data_base']})")
     p.add_argument("-s", "--start", action="store_true", help="Initialize and start after install")
     p.add_argument("-M", "--cluster-mode", choices=["non-ha", "ha"], help="Force cluster mode (default: auto by host count)")
     p.add_argument("-r", "--role-file", help="Role file (YAML) for HA mapping (optional)")
@@ -501,7 +501,7 @@ def main(argv: List[str]) -> int:
     install_base = args.install_dir or (last_cfg.get("install_base") if last_cfg else None) \
         or prompt("Install directory (base directory path to store ozone binaries, configs and logs)", default=DEFAULTS["install_base"], yes_mode=yes)
     data_base = args.data_dir or (last_cfg.get("data_base") if last_cfg else None) \
-        or prompt("Data directory (base directory path to store ozone metadata and data)", default=DEFAULTS["data_base"], yes_mode=yes)
+        or prompt("Data directory (base path(s), comma-separated for multiple dirs)", default=DEFAULTS["data_base"], yes_mode=yes)
 
     # Auth (before service user/group)
     auth_method = args.auth_method or (last_cfg.get("auth_method") if last_cfg else None) \

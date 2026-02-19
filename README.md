@@ -256,7 +256,7 @@ ANSIBLE_CONFIG=ansible.cfg ansible-playbook -i inventories/dev/hosts.ini playboo
 ### Directories
 
 - Install base (`install_base`, default `/opt/ozone`): where Ozone binaries and configs live. A `current` symlink points to the active version directory.
-- Data base (`data_base`, default `/data/ozone`): where Ozone writes on‑disk metadata and Datanode data (e.g., `ozone.metadata.dirs`, `hdds.datanode.dir`).
+- Data base (`data_base`, default `/data/ozone`): where Ozone writes on‑disk metadata and Datanode data (e.g., `ozone.metadata.dirs`, `hdds.datanode.dir`). Supports comma-separated multiple directories (e.g. `/data/ozone1,/data/ozone2`); each path gets `dn`, `meta`, `data/om`, etc. subdirs in `ozone-site.xml`.
 
 ## Components and config mapping
 
@@ -265,7 +265,7 @@ ANSIBLE_CONFIG=ansible.cfg ansible-playbook -i inventories/dev/hosts.ini playboo
   - HA: first three hosts serve as OM and SCM sets; all hosts are DNs; first host is Recon.
 - `ozone-site.xml` is rendered from templates based on inventory groups:
   - `ozone.scm.names`, `ozone.scm.client.address`, `ozone.om.address` or HA service IDs
-  - `ozone.metadata.dirs`, `hdds.datanode.dir`, and related paths map to `data_base`
+  - `ozone.metadata.dirs`, `hdds.datanode.dir`, and related paths map to `data_base` (comma-separated dirs are expanded per property)
   - Replication is set to ONE if DN count < 3, otherwise THREE
 
 ## Optional: S3 Gateway (S3G) and smoke

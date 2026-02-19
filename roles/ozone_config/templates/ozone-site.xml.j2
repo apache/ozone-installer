@@ -16,6 +16,7 @@
 -->
 <configuration>
   <!-- Minimal Ozone site config; extend via group_vars if needed -->
+{% set _data_bases = data_base_list | default([data_base | default('/data/ozone')]) %}
 {% set _om_all = groups.get('om', [])| list %}
 {% set _scm_all = groups.get('scm', []) | list %}
 {% set _all_dn_count = groups.get('datanodes', []) | list | length %}
@@ -101,31 +102,31 @@
 {% endif %}
   <property>
     <name>ozone.metadata.dirs</name>
-    <value>{{ data_base }}/meta</value>
+    <value>{% for d in _data_bases %}{{ d }}/meta{% if not loop.last %},{% endif %}{% endfor %}</value>
   </property>
   <property>
     <name>hdds.datanode.dir</name>
-    <value>{{ data_base }}/dn</value>
+    <value>{% for d in _data_bases %}{{ d }}/dn{% if not loop.last %},{% endif %}{% endfor %}</value>
   </property>
   <property>
     <name>dfs.container.ratis.datanode.storage.dir</name>
-    <value>{{ data_base }}/meta/dn</value>
+    <value>{% for d in _data_bases %}{{ d }}/meta/dn{% if not loop.last %},{% endif %}{% endfor %}</value>
   </property>
   <property>
     <name>ozone.om.db.dirs</name>
-    <value>{{ data_base }}/data/om</value>
+    <value>{% for d in _data_bases %}{{ d }}/data/om{% if not loop.last %},{% endif %}{% endfor %}</value>
   </property>
   <property>
     <name>ozone.om.ratis.snapshot.dir</name>
-    <value>{{ data_base }}/meta/om</value>
+    <value>{% for d in _data_bases %}{{ d }}/meta/om{% if not loop.last %},{% endif %}{% endfor %}</value>
   </property>
   <property>
     <name>ozone.scm.db.dirs</name>
-    <value>{{ data_base }}/data/scm</value>
+    <value>{% for d in _data_bases %}{{ d }}/data/scm{% if not loop.last %},{% endif %}{% endfor %}</value>
   </property>
   <property>
     <name>ozone.scm.datanode.id.dir</name>
-    <value>{{ data_base }}/meta/scm</value>
+    <value>{% for d in _data_bases %}{{ d }}/meta/scm{% if not loop.last %},{% endif %}{% endfor %}</value>
   </property>
   <property>
     <name>ozone.scm.skip.bootstrap.validation</name>
