@@ -648,13 +648,15 @@ def main(argv: List[str]) -> int:
         local_path = str(candidate)
 
     # Build a human-friendly summary table of inputs before continuing
-    host_list_display = (
-        f"Masters: {masters_raw or ''} | Workers: {workers_raw or ''}"
-        if use_master_worker
-        else str(hosts_raw or "")
-    )
-    summary_rows: List[Tuple[str, str]] = [
-        ("Hosts", host_list_display),
+    if use_master_worker:
+        summary_host_rows: List[Tuple[str, str]] = [
+            ("Masters", masters_raw or ""),
+            ("Workers", workers_raw or ""),
+        ]
+    else:
+        summary_host_rows = [("Hosts", str(hosts_raw or ""))]
+
+    summary_rows = summary_host_rows + [
         ("Cluster mode", cluster_mode),
         ("Ozone version", str(ozone_version)),
         ("JDK major", str(jdk_major)),
@@ -665,10 +667,12 @@ def main(argv: List[str]) -> int:
     ]
     if keyfile:
         summary_rows.append(("Key file", str(keyfile)))
-    summary_rows.extend([("Use sudo", str(bool(use_sudo))),
-                        ("Service user", str(service_user)),
-                        ("Service group", str(service_group)),
-                        ("Start after install", str(bool(start_after_install)))])
+    summary_rows.extend([
+        ("Use sudo", str(bool(use_sudo))),
+        ("Service user", str(service_user)),
+        ("Service group", str(service_group)),
+        ("Start after install", str(bool(start_after_install))),
+    ])
     if ozone_version and str(ozone_version).lower() == "local":
         summary_rows.append(("Local Ozone path", str(local_path or "")))
     if not _confirm_summary(summary_rows, yes_mode=yes):
