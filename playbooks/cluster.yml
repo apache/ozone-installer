@@ -65,15 +65,25 @@
       tags: ["ozone_service"]
       when: start_after_install | bool
 
-- name: "Ozone Smoke Test"
+- name: "Ozone Cluster Smoke Test"
   hosts: "{{ groups['om'] | list | first }}"
   gather_facts: false
   roles:
     - role: ozone_ui
       tags: ["ozone_ui"]
-    - role: ozone_smoke
-      tags: ["ozone_smoke"]
+    - role: ozone_smoke_cluster
+      tags: ["ozone_smoke_cluster"]
 
+- name: "Ozone S3G Smoke Test"
+  hosts: "{{ (groups.get('s3g', []) | list)[0] if (groups.get('s3g', []) | length) > 0 else 'never' }}"
+  gather_facts: false
+  roles:
+    - role: ozone_smoke_s3g
+      tags: ["ozone_smoke_s3g"]
+
+- name: "Display UI Endpoints"
+  hosts: "{{ groups['om'] | list | first }}"
+  gather_facts: false
   post_tasks:
     - name: "Build UI endpoints display lines"
       set_fact:
@@ -97,12 +107,17 @@
             )) +
             ['', 'S3 Gateway (HTTP):'] +
             ((endpoint_urls.s3g_http | length > 0) | ternary(
-              endpoint_urls.s3g_http | map('regex_replace', '^', '  - ') | list,
+              ['  - ' ~ (endpoint_urls.s3g_http | first)],
               ['  - Not configured']
             )) +
-            ['', 'S3 Gateway (Admin):'] +
+            ['', 'S3 Gateway (Web Admin):'] +
             ((endpoint_urls.s3g_admin | length > 0) | ternary(
-              endpoint_urls.s3g_admin | map('regex_replace', '^', '  - ') | list,
+              ['  - ' ~ (endpoint_urls.s3g_admin | first)],
+              ['  - Not configured']
+            )) +
+            ['', 'Datanode UI:'] +
+            ((endpoint_urls.datanode | length > 0) | ternary(
+              ['  - ' ~ (endpoint_urls.datanode | first)],
               ['  - Not configured']
             )) +
             [
