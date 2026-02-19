@@ -14,3 +14,4 @@
 # claim, damages or other liability.
 #
 s3g_bucket: demos3g
+s3g_key: demokey

@@ -14,6 +14,10 @@
 # claim, damages or other liability.
 #
 ---
+- name: "Set S3G endpoint argument"
+  set_fact:
+    s3g_endpoint_arg: '--endpoint-url "http://{{ inventory_hostname }}:9878"'
+
 - name: "Install awscli on S3G host"
   package:
     name: awscli
@@ -31,7 +35,7 @@
 - name: "AWS CLI S3G: create test bucket '{{ s3g_bucket }}'"
   shell: |
     set -o pipefail
-    aws s3api create-bucket --bucket {{ s3g_bucket }} --endpoint-url "http://{{ inventory_hostname }}:9878" || true
+    aws s3api create-bucket --bucket {{ s3g_bucket }} {{ s3g_endpoint_arg }} || true
   args:
     executable: /bin/bash
   register: aws_create_result
@@ -40,10 +44,30 @@
 - name: "AWS CLI S3G: list buckets"
   shell: |
     set -o pipefail
-    aws s3api list-buckets --endpoint-url "http://{{ inventory_hostname }}:9878"
+    aws s3api list-buckets {{ s3g_endpoint_arg }}
   args:
     executable: /bin/bash
   register: aws_list_result
+  changed_when: false
+
+- name: "AWS CLI S3G: put object (key put)"
+  shell: |
+    set -euo pipefail
+    dd if=/dev/zero of=/tmp/oz_s3g_smoke.bin bs=1M count=1 status=none
+    aws s3api put-object --bucket {{ s3g_bucket }} --key {{ s3g_key }} --body /tmp/oz_s3g_smoke.bin {{ s3g_endpoint_arg }}
+    rm -f /tmp/oz_s3g_smoke.bin
+  args:
+    executable: /bin/bash
+  register: aws_put_result
+  changed_when: false
+
+- name: "AWS CLI S3G: list objects"
+  shell: |
+    set -o pipefail
+    aws s3api list-objects-v2 --bucket {{ s3g_bucket }} {{ s3g_endpoint_arg }}
+  args:
+    executable: /bin/bash
+  register: aws_list_objects_result
   changed_when: false
 
 - name: "Show AWS CLI S3G check output"
@@ -51,3 +75,5 @@
     msg:
       - "Create bucket output: {{ (aws_create_result.stdout | default('')) }}"
       - "List buckets output: {{ (aws_list_result.stdout | default('')) }}"
+      - "Put object output: {{ (aws_put_result.stdout | default('')) }}"
+      - "List objects output: {{ (aws_list_objects_result.stdout | default('')) }}"
