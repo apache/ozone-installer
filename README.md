@@ -256,7 +256,7 @@ ANSIBLE_CONFIG=ansible.cfg ansible-playbook -i inventories/dev/hosts.ini playboo
 ### Directories
 
 - Install base (`install_base`, default `/opt/ozone`): where Ozone binaries and configs live. A `current` symlink points to the active version directory.
-- Data base (`data_base`, default `/data/ozone`): where Ozone writes on‑disk metadata and Datanode data (e.g., `ozone.metadata.dirs`, `hdds.datanode.dir`). Supports comma-separated multiple directories (e.g. `/data/ozone1,/data/ozone2`); each path gets `dn`, `meta`, `data/om`, etc. subdirs in `ozone-site.xml`.
+- Data base (`data_base`, default `/data/ozone`): where Ozone writes on‑disk metadata and Datanode data (e.g., `ozone.metadata.dirs`, `hdds.datanode.dir`). Supports comma-separated multiple directories (e.g. `/data/ozone1,/data/ozone2`) or brace expansion (e.g. `/data/ozone{1..3}` → `/data/ozone1,/data/ozone2,/data/ozone3`); each path gets `dn`, `meta`, `data/om`, etc. subdirs in `ozone-site.xml`.
 
 ## Components and config mapping
 

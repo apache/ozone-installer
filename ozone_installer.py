@@ -85,7 +85,7 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
     p.add_argument("-k", "--keyfile", help="SSH private key file (for --auth-method=key)")
     p.add_argument("-v", "--version", help="Ozone version (e.g., 2.0.0) or 'local'")
     p.add_argument("-i", "--install-dir", help=f"Install root (default: {DEFAULTS['install_base']})")
-    p.add_argument("-d", "--data-dir", help=f"Data root(s), comma-separated for multiple (default: {DEFAULTS['data_base']})")
+    p.add_argument("-d", "--data-dir", help=f"Data root(s), comma-separated or brace expansion e.g. /data/ozone{{1..3}} (default: {DEFAULTS['data_base']})")
     p.add_argument("-s", "--start", action="store_true", help="Initialize and start after install")
     p.add_argument("-M", "--cluster-mode", choices=["non-ha", "ha"], help="Force cluster mode (default: auto by host count)")
     p.add_argument("-r", "--role-file", help="Role file (YAML) for HA mapping (optional)")
@@ -272,6 +272,20 @@ def expand_braces(expr: str) -> List[str]:
         return [expr]
     pre, a, b, post = m.group(1), int(m.group(2)), int(m.group(3)), m.group(4)
     return [f"{pre}{i}{post}" for i in range(a, b + 1)]
+
+def parse_data_dirs(data_raw: Optional[str]) -> str:
+    """
+    Accepts comma-separated data dirs; each may contain brace expansion (e.g. /data/ozone{1..3}).
+    Returns comma-separated string of expanded paths.
+    """
+    if not data_raw:
+        return data_raw or ""
+    out = []
+    for token in data_raw.split(","):
+        token = token.strip()
+        expanded = expand_braces(token)
+        out.extend(expanded)
+    return ",".join(out)
 
 def parse_hosts(hosts_raw: Optional[str]) -> List[dict]:
     """
@@ -500,8 +514,9 @@ def main(argv: List[str]) -> int:
             jdk_major = DEFAULTS["jdk_major"]
     install_base = args.install_dir or (last_cfg.get("install_base") if last_cfg else None) \
         or prompt("Install directory (base directory path to store ozone binaries, configs and logs)", default=DEFAULTS["install_base"], yes_mode=yes)
-    data_base = args.data_dir or (last_cfg.get("data_base") if last_cfg else None) \
-        or prompt("Data directory (base path(s), comma-separated for multiple dirs)", default=DEFAULTS["data_base"], yes_mode=yes)
+    data_base_raw = args.data_dir or (last_cfg.get("data_base") if last_cfg else None) \
+        or prompt("Data directory (base path(s), comma-separated or brace expansion e.g. /data/ozone{1..3})", default=DEFAULTS["data_base"], yes_mode=yes)
+    data_base = parse_data_dirs(data_base_raw) if data_base_raw else (data_base_raw or DEFAULTS["data_base"])
 
     # Auth (before service user/group)
     auth_method = args.auth_method or (last_cfg.get("auth_method") if last_cfg else None) \
