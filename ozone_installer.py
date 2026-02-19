@@ -62,9 +62,8 @@ def get_logger(log_path: Optional[Path] = None) -> logging.Logger:
         pass
     logger = logging.getLogger("ozone_installer")
     logger.setLevel(logging.INFO)
-    # Avoid duplicate handlers if re-invoked
+    dest = log_path or (LOGS_DIR / "ansible.log")
     if not logger.handlers:
-        dest = log_path or (LOGS_DIR / "ansible.log")
         fh = logging.FileHandler(dest)
         fh.setLevel(logging.INFO)
         formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
@@ -72,6 +71,17 @@ def get_logger(log_path: Optional[Path] = None) -> logging.Logger:
         logger.addHandler(fh)
         sh = logging.StreamHandler(sys.stdout)
         logger.addHandler(sh)
+    elif log_path:
+        # Replace FileHandler when a new run-specific path is requested
+        for h in list(logger.handlers):
+            if isinstance(h, logging.FileHandler):
+                logger.removeHandler(h)
+                h.close()
+        fh = logging.FileHandler(dest)
+        fh.setLevel(logging.INFO)
+        formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
+        fh.setFormatter(formatter)
+        logger.addHandler(fh)
     return logger
 
 def parse_args(argv: List[str]) -> argparse.Namespace:
