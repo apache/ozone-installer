@@ -659,12 +659,15 @@ def main(argv: List[str]) -> int:
 
     # Build a human-friendly summary table of inputs before continuing
     if use_master_worker:
+        m_count = len(master_hosts)
+        w_count = len(worker_hosts)
         summary_host_rows: List[Tuple[str, str]] = [
-            ("Masters", masters_raw or ""),
-            ("Workers", workers_raw or ""),
+            ("Masters", f"{m_count} host{'s' if m_count != 1 else ''}"),
+            ("Workers", f"{w_count} host{'s' if w_count != 1 else ''}"),
         ]
     else:
-        summary_host_rows = [("Hosts", str(hosts_raw or ""))]
+        h_count = len(hosts)
+        summary_host_rows = [("Hosts", f"{h_count} host{'s' if h_count != 1 else ''}")]
 
     summary_rows = summary_host_rows + [
         ("Cluster mode", cluster_mode),
