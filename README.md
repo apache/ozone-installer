@@ -116,7 +116,7 @@ python3 ozone_installer.py -H host1.domain -v 2.0.0
 # HA upstream (3+ hosts) - mode auto-detected
 python3 ozone_installer.py -H "host{1..3}.domain" -v 2.0.0
 
-# Using host file instead of CLI (one host per line, supports user@host:port format)
+# Host file with [masters] and [workers] sections (masters=SCM,OM,Recon; workers=Datanode,S3G)
 python3 ozone_installer.py -F hosts.txt -v 2.0.0
 
 # Local snapshot build
@@ -160,7 +160,21 @@ Add `ansible_python_interpreter=/usr/bin/python3.9` to each host line in your in
 
 ### Host file format
 
-When using `-F/--host-file`, create a text file with one host per line. See `hosts.txt.example` for a complete example.
+When using `-F/--host-file`, two formats are supported:
+
+**1) Master/worker split** – use `[masters]` and `[workers]` sections (INI-style). Masters run SCM, OM, Recon; workers run Datanode, S3G:
+```
+[masters]
+master1.domain
+master2.domain
+master3.domain
+
+[workers]
+worker1.domain
+worker2.domain
+```
+
+**2) All-in-one** – Plain list, one host per line. All hosts run datanode roles and first 3 runs OM/SCM. Supports `user@host:port` format.
 
 
 ### Interactive prompts and version selection
@@ -261,8 +275,8 @@ ANSIBLE_CONFIG=ansible.cfg ansible-playbook -i inventories/dev/hosts.ini playboo
 ## Components and config mapping
 
 - Components (per the Ozone docs): Ozone Manager (OM), Storage Container Manager (SCM), Datanodes (DN), and Recon. The installer maps:
-  - Non‑HA: first host runs OM+SCM+Recon; all hosts are DNs.
-  - HA: first three hosts serve as OM and SCM sets; all hosts are DNs; first host is Recon.
+  - **Master/worker mode** (host file with `[masters]` and `[workers]` sections): Masters run SCM, OM, Recon; workers run Datanode, S3G. HA requires 3+ masters.
+  - **Legacy mode** (`-H`/`-F`): Non‑HA: first host runs OM+SCM+Recon; all hosts are DNs. HA: first three hosts serve as OM and SCM sets; all hosts are DNs; first host is Recon.
 - `ozone-site.xml` is rendered from templates based on inventory groups:
   - `ozone.scm.names`, `ozone.scm.client.address`, `ozone.om.address` or HA service IDs
   - `ozone.metadata.dirs`, `hdds.datanode.dir`, and related paths map to `data_base` (comma-separated dirs are expanded per property)

@@ -79,7 +79,7 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
         description="Ozone Ansible Installer (Python trigger) - mirrors bash installer flags"
     )
     p.add_argument("-H", "--host", help="Target host(s). Non-HA: host. HA: comma-separated or brace expansion host{1..n}")
-    p.add_argument("-F", "--host-file", help="File containing target hosts (one per line, supports @, : for user/port)")
+    p.add_argument("-F", "--host-file", help="Host file. Plain list = all-in-one. Use [masters] and [workers] sections for master/worker split")
     p.add_argument("-m", "--auth-method", choices=["password", "key"], default=None)
     p.add_argument("-p", "--password", help="SSH password (for --auth-method=password)")
     p.add_argument("-k", "--keyfile", help="SSH private key file (for --auth-method=key)")
@@ -310,57 +310,97 @@ def parse_hosts(hosts_raw: Optional[str]) -> List[dict]:
             out.append({"host": host, "user": user, "port": port})
     return out
 
-def read_hosts_from_file(filepath: str) -> Optional[str]:
+def read_hosts_from_file(filepath: str) -> Tuple[Optional[str], Optional[str]]:
     """
-    Reads hosts from a file (one host per line).
-    Lines starting with # are treated as comments and ignored.
-    Empty lines are ignored.
-    Supports same format as CLI: user@host:port
-    Returns comma-separated host string suitable for parse_hosts().
+    Reads hosts from a file.
+
+    Two formats supported:
+    1) Master/worker: [masters] and [workers] sections (INI-style). Returns (masters_csv, workers_csv).
+    2) Legacy: plain list, one host per line. Returns (hosts_csv, None).
+
+    Lines starting with # are comments. Empty lines ignored. Supports user@host:port.
     """
     logger = get_logger()
     try:
         path = Path(filepath)
         if not path.exists():
             logger.error(f"Host file not found: {filepath}")
-            return None
-        hosts = []
+            return (None, None)
+        masters: List[str] = []
+        workers: List[str] = []
+        flat: List[str] = []
+        current_section: Optional[str] = None
         with path.open('r') as f:
             for line in f:
                 line = line.strip()
-                # Skip empty lines and comments
                 if not line or line.startswith('#'):
                     continue
-                hosts.append(line)
-        if hosts:
-            logger.info(f"Read {len(hosts)} host(s) from {filepath}")
-            return ','.join(hosts)
-        else:
-            logger.error(f"No valid hosts found in {filepath}")
-            return None
+                if line.startswith('[') and line.endswith(']'):
+                    current_section = line[1:-1].lower()
+                    continue
+                if current_section == "masters":
+                    masters.append(line)
+                elif current_section == "workers":
+                    workers.append(line)
+                elif current_section is None:
+                    flat.append(line)
+        if masters and workers:
+            logger.info(f"Read {len(masters)} master(s) and {len(workers)} worker(s) from {filepath}")
+            return (','.join(masters), ','.join(workers))
+        if flat:
+            logger.info(f"Read {len(flat)} host(s) from {filepath}")
+            return (','.join(flat), None)
+        logger.error(f"No valid hosts found in {filepath}")
+        return (None, None)
     except Exception as e:
         logger.error(f"Error reading host file {filepath}: {e}")
-        return None
+        return (None, None)
 
-def auto_cluster_mode(hosts: List[dict], forced: Optional[str] = None) -> str:
+def auto_cluster_mode(hosts: List[dict], forced: Optional[str] = None, master_count: Optional[int] = None) -> str:
     if forced in ("non-ha", "ha"):
         return forced
-    return "ha" if len(hosts) >= 3 else "non-ha"
+    n = master_count if master_count is not None else len(hosts)
+    return "ha" if n >= 3 else "non-ha"
 
-def build_inventory(hosts: List[dict], ssh_user: Optional[str] = None, keyfile: Optional[str] = None, password: Optional[str] = None, cluster_mode: str = "non-ha", python_interpreter: Optional[str] = None) -> str:
+def build_inventory(
+    hosts: Optional[List[dict]] = None,
+    master_hosts: Optional[List[dict]] = None,
+    worker_hosts: Optional[List[dict]] = None,
+    ssh_user: Optional[str] = None,
+    keyfile: Optional[str] = None,
+    password: Optional[str] = None,
+    cluster_mode: str = "non-ha",
+    python_interpreter: Optional[str] = None,
+) -> str:
     """
     Returns INI inventory text for our groups: [om], [scm], [datanodes], [recon], [s3g]
+
+    Either (hosts) for all-in-one, or (master_hosts, worker_hosts) for master/worker split.
+    Masters run SCM, OM, Recon. Workers run Datanode, S3G.
     """
+    use_master_worker = master_hosts is not None and worker_hosts is not None
+    if use_master_worker:
+        if not master_hosts or not worker_hosts:
+            return ""
+        # Master/worker: masters -> OM, SCM, Recon; workers -> Datanodes, S3G
+        om = master_hosts[:3] if cluster_mode == "ha" and len(master_hosts) >= 3 else master_hosts[:1]
+        scm = master_hosts[:3] if cluster_mode == "ha" and len(master_hosts) >= 3 else master_hosts[:1]
+        recon = [master_hosts[0]]
+        dn = worker_hosts
+        s3g = [worker_hosts[0]] if worker_hosts else []
+        return _render_inv_groups(
+            om=om, scm=scm, dn=dn, recon=recon, s3g=s3g,
+            ssh_user=ssh_user, keyfile=keyfile, password=password, python_interpreter=python_interpreter
+        )
+    # Legacy: single host list, all roles derived from it
     if not hosts:
         return ""
-    # Non-HA mapping: OM/SCM on first host; all hosts as datanodes; recon on first
     if cluster_mode == "non-ha":
         h = hosts[0]
         return _render_inv_groups(
             om=[h], scm=[h], dn=hosts, recon=[h], s3g=[h],
             ssh_user=ssh_user, keyfile=keyfile, password=password, python_interpreter=python_interpreter
         )
-    # HA: first 3 go to OM and SCM; all to datanodes; recon is first if present
     om = hosts[:3] if len(hosts) >= 3 else hosts
     scm = hosts[:3] if len(hosts) >= 3 else hosts
     dn = hosts
@@ -449,22 +489,41 @@ def main(argv: List[str]) -> int:
         except Exception:
             last_cfg = None
 
-    # Gather inputs interactively where missing
-    hosts_raw_default = (last_cfg.get("hosts_raw") if last_cfg else None)
-    # Check if hosts are provided via file first, then CLI, then default/prompt
-    if args.host_file:
-        hosts_raw = read_hosts_from_file(args.host_file)
-        if not hosts_raw:
+    # Gather inputs: from host file ([masters]/[workers] sections) or -H (legacy)
+    masters_raw = None
+    workers_raw = None
+    hosts_raw = None
+    master_hosts: List[dict] = []
+    worker_hosts: List[dict] = []
+    hosts: List[dict] = []
+    host_file_path = args.host_file or (last_cfg.get("host_file") if last_cfg else None)
+
+    if host_file_path:
+        file_masters, file_workers = read_hosts_from_file(host_file_path)
+        if file_masters is None and file_workers is None:
             logger = get_logger()
-            logger.error(f"Error: Could not read hosts from file: {args.host_file}")
+            logger.error(f"Error: Could not read hosts from file: {host_file_path}")
             return 2
+        if file_workers is not None:
+            # File has [masters] and [workers] sections
+            masters_raw = file_masters
+            workers_raw = file_workers
+            master_hosts = parse_hosts(masters_raw) if masters_raw else []
+            worker_hosts = parse_hosts(workers_raw) if workers_raw else []
+        else:
+            # Legacy: plain host list
+            hosts_raw = file_masters
+            hosts = parse_hosts(hosts_raw) if hosts_raw else []
     else:
+        hosts_raw_default = (last_cfg.get("hosts_raw") if last_cfg else None)
         hosts_raw = args.host or hosts_raw_default or prompt("Target host(s) [non-ha: host | HA: h1,h2,h3 or brace expansion]", default="", yes_mode=yes)
-    hosts = parse_hosts(hosts_raw) if hosts_raw else []
-    # Initialize per-run logger as soon as we have hosts_raw
+        hosts = parse_hosts(hosts_raw) if hosts_raw else []
+
+    use_master_worker = bool(masters_raw is not None and workers_raw is not None)
+    # Initialize per-run logger as soon as we have host info
     try:
         ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-        raw_hosts_for_name = (hosts_raw or "").strip()
+        raw_hosts_for_name = (hosts_raw or masters_raw or workers_raw or "").strip()
         safe_hosts = re.sub(r"[^A-Za-z0-9_.-]+", "-", raw_hosts_for_name)[:80] or "hosts"
         run_log_path = LOGS_DIR / f"ansible-{ts}-{safe_hosts}.log"
         logger = get_logger(run_log_path)
@@ -474,23 +533,29 @@ def main(argv: List[str]) -> int:
         logger = get_logger(run_log_path)
         logger.info(f"Logging to: {run_log_path} (fallback)")
 
-    if not hosts:
-        logger.error("Error: No hosts provided (-H/--host or -F/--host-file).")
-        return 2
-    # Decide HA vs Non-HA with user input; default depends on host count
+    if use_master_worker:
+        if not master_hosts or not worker_hosts:
+            logger.error("Error: Host file must have both [masters] and [workers] sections with at least one host each.")
+            return 2
+    else:
+        if not hosts:
+            logger.error("Error: No hosts provided (-H/--host or -F/--host-file).")
+            return 2
+    # Decide HA vs Non-HA with user input; default depends on master count
+    master_count = len(master_hosts) if use_master_worker else len(hosts)
     resume_cluster_mode = (last_cfg.get("cluster_mode") if last_cfg else None)
     if args.cluster_mode:
         cluster_mode = args.cluster_mode
     elif resume_cluster_mode:
         cluster_mode = resume_cluster_mode
     else:
-        default_mode = "ha" if len(hosts) >= 3 else "non-ha"
+        default_mode = auto_cluster_mode(hosts or [], master_count=master_count)
         selected = prompt("Deployment type (option: ha or non-ha)", default=default_mode, yes_mode=yes)
         cluster_mode = (selected or default_mode).strip().lower()
         if cluster_mode not in ("ha", "non-ha"):
             cluster_mode = default_mode
-    if cluster_mode == "ha" and len(hosts) < 3:
-        logger.error("Error: HA requires at least 3 hosts (to map 3 OMs and 3 SCMs).")
+    if cluster_mode == "ha" and master_count < 3:
+        logger.error("Error: HA requires at least 3 master hosts (to map 3 OMs and 3 SCMs).")
         return 2
 
     # Resolve download base early for version selection
@@ -583,7 +648,11 @@ def main(argv: List[str]) -> int:
         local_path = str(candidate)
 
     # Build a human-friendly summary table of inputs before continuing
-    host_list_display = str(hosts_raw or "")
+    host_list_display = (
+        f"Masters: {masters_raw or ''} | Workers: {workers_raw or ''}"
+        if use_master_worker
+        else str(hosts_raw or "")
+    )
     summary_rows: List[Tuple[str, str]] = [
         ("Hosts", host_list_display),
         ("Cluster mode", cluster_mode),
@@ -614,8 +683,17 @@ def main(argv: List[str]) -> int:
         logger.info("Python interpreter will be auto-detected by playbook")
     
     # Prepare dynamic inventory and extra-vars
-    inventory_text = build_inventory(hosts, ssh_user=ssh_user, keyfile=keyfile, password=password,
-                                     cluster_mode=cluster_mode, python_interpreter=python_interpreter)
+    if use_master_worker:
+        inventory_text = build_inventory(
+            master_hosts=master_hosts, worker_hosts=worker_hosts,
+            ssh_user=ssh_user, keyfile=keyfile, password=password,
+            cluster_mode=cluster_mode, python_interpreter=python_interpreter
+        )
+    else:
+        inventory_text = build_inventory(
+            hosts=hosts, ssh_user=ssh_user, keyfile=keyfile, password=password,
+            cluster_mode=cluster_mode, python_interpreter=python_interpreter
+        )
     # Decide cleanup behavior up-front (so we can pass it into the unified play)
     do_cleanup = False
     if args.clean:
@@ -670,7 +748,8 @@ def main(argv: List[str]) -> int:
             inv_path = persisted_inv
             ev_path = persisted_ev
             # Save effective simple config for future resume
-            LAST_RUN_FILE.write_text(json.dumps({
+            last_run = {
+                "host_file": host_file_path if host_file_path else None,
                 "hosts_raw": hosts_raw,
                 "cluster_mode": cluster_mode,
                 "ozone_version": ozone_version,
@@ -689,7 +768,11 @@ def main(argv: List[str]) -> int:
                 "local_shared_path": local_shared_path or "",
                 "local_ozone_dirname": local_oz_dir or "",
                 "python_interpreter": python_interpreter or "",
-            }, indent=2), encoding="utf-8")
+            }
+            if use_master_worker:
+                last_run["masters_raw"] = masters_raw
+                last_run["workers_raw"] = workers_raw
+            LAST_RUN_FILE.write_text(json.dumps(last_run, indent=2), encoding="utf-8")
         except Exception:
             # Fall back to temp files if persisting fails
             pass
@@ -731,7 +814,7 @@ def main(argv: List[str]) -> int:
             pass
 
         try:
-            example_host = hosts[0]["host"] if hosts else "HOSTNAME"
+            example_host = (master_hosts[0]["host"] if use_master_worker and master_hosts else hosts[0]["host"] if hosts else "HOSTNAME")
             logger.info(f"To view process logs: ssh to the node and read {install_base}/current/logs/ozone-{service_user}-<process>-<host>.log "
                         f"(e.g., {install_base}/current/logs/ozone-{service_user}-recon-{example_host}.log)")
         except Exception:
