@@ -16,13 +16,23 @@
 # Example host file for ozone_installer.py
 # Usage: python3 ozone_installer.py -F hosts.txt.example -v 2.0.0
 #
-# Format: One host per line
-# Supports: user@host:port
-# Comments and empty lines are ignored
-
-# Simple hostname
-# host1.example.com
-
+# Two formats supported:
+#
+# 1) Master/worker: [masters] and [workers] sections (masters=SCM,OM,Recon; workers=Datanode,S3G)
+# 2) Plain list, one host per line (all hosts run datanodes and SCM/OM runs on first three hosts)
+#
+# Supports: user@host:port. Comments (#) and empty lines are ignored.
+#
+# --- Master/worker format example ---
+# [masters]
+# master1.example.com
+# master2.example.com
+# master3.example.com
+#
+# [workers]
+# worker1.example.com
+# worker2.example.com
+#
 # With SSH user
 # ozone@host2.example.com
 

@@ -15,6 +15,10 @@
 
 ---
 
+- name: "Set ozone binary path"
+  set_fact:
+    ozone_bin: "{{ install_base }}/current/bin/ozone"
+
 # Common service command context for HA and Non-HA
 - name: "Ozone Service: Start SCM/OM"
   become: true
@@ -25,7 +29,7 @@
     - name: "Initialize/Start first SCM/OM"
       block:
         - name: "Initialize first SCM"
-          command: "ozone scm --init"
+          command: "{{ ozone_bin }} scm --init"
           args:
             creates: "{{ (data_base_list | first) | default(data_base) }}/meta/scm"
           when: (groups['scm'] | length > 0) and (inventory_hostname == groups['scm'][0])
@@ -33,13 +37,13 @@
           failed_when: scm_init_first.rc != 0
 
         - name: "Start first SCM"
-          command: "ozone --daemon start scm"
+          command: "{{ ozone_bin }} --daemon start scm"
           when: (groups['scm'] | length > 0) and (inventory_hostname == groups['scm'][0])
           register: scm_start_first
           failed_when: scm_start_first.rc != 0
 
         - name: "Initialize first OM"
-          command: "ozone om --init"
+          command: "{{ ozone_bin }} om --init"
           args:
             creates: "{{ (data_base_list | first) | default(data_base) }}/meta/om"
           when: (groups['om'] | length > 0) and (inventory_hostname == groups['om'][0])
@@ -47,7 +51,7 @@
           failed_when: om_init_first.rc != 0
 
         - name: "Start first OM"
-          command: "ozone --daemon start om"
+          command: "{{ ozone_bin }} --daemon start om"
           when: (groups['om'] | length > 0) and (inventory_hostname == groups['om'][0])
           register: om_start_first
           failed_when: om_start_first.rc != 0
@@ -56,25 +60,25 @@
       when: (ha_enabled | default(false))
       block:
         - name: "SCM bootstrap on remaining SCMs"
-          command: "ozone scm --bootstrap"
+          command: "{{ ozone_bin }} scm --bootstrap"
           when: "'scm' in groups and (groups['scm'] | length > 1) and (inventory_hostname in groups['scm'][1:])"
           register: scm_bootstrap_rest
           failed_when: scm_bootstrap_rest.rc != 0
 
         - name: "Start SCM on remaining SCMs"
-          command: "ozone --daemon start scm"
+          command: "{{ ozone_bin }} --daemon start scm"
           when: "'scm' in groups and (groups['scm'] | length > 1) and (inventory_hostname in groups['scm'][1:])"
           register: scm_start_rest
           failed_when: scm_start_rest.rc != 0
 
         - name: "OM init on remaining OMs"
-          command: "ozone om --init"
+          command: "{{ ozone_bin }} om --init"
           when: "'om' in groups and (groups['om'] | length > 1) and (inventory_hostname in groups['om'][1:])"
           register: om_init_rest
           failed_when: om_init_rest.rc != 0
 
         - name: "Start OM on remaining OMs"
-          command: "ozone --daemon start om"
+          command: "{{ ozone_bin }} --daemon start om"
           when: "'om' in groups and (groups['om'] | length > 1) and (inventory_hostname in groups['om'][1:])"
           register: om_start_rest
           failed_when: om_start_rest.rc != 0
@@ -86,7 +90,7 @@
   environment: "{{ ozone_runtime_env }}"
   block:
     - name: "Start Datanodes"
-      command: "ozone --daemon start datanode"
+      command: "{{ ozone_bin }} --daemon start datanode"
       when: inventory_hostname in (groups.get('datanodes', []))
       async: 300
       poll: 0
@@ -101,14 +105,14 @@
       failed_when: (dn_wait.rc | default(0)) != 0
 
     - name: "Start Recon on first recon host"
-      command: "ozone --daemon start recon"
+      command: "{{ ozone_bin }} --daemon start recon"
       when: (groups.get('recon', []) | length > 0) and (inventory_hostname == groups['recon'][0])
       register: recon_start
       failed_when: recon_start.rc != 0
 
-    - name: "Start S3G on first s3g host"
-      command: "ozone --daemon start s3g"
-      when: (groups.get('s3g', []) | length > 0) and (inventory_hostname == groups['s3g'][0])
+    - name: "Start S3G on s3g hosts"
+      command: "{{ ozone_bin }} --daemon start s3g"
+      when: inventory_hostname in (groups.get('s3g', []))
       register: s3g_start
       failed_when: s3g_start.rc != 0
 
