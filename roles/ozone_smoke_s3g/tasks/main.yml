@@ -1,0 +1,79 @@
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+# PURPOSE AND NONINFRINGEMENT.  In no event shall the ASF be liable for any
+# claim, damages or other liability.
+#
+---
+- name: "Set S3G endpoint argument"
+  set_fact:
+    s3g_endpoint_arg: '--endpoint-url "http://{{ inventory_hostname }}:9878"'
+
+- name: "Install awscli on S3G host"
+  package:
+    name: awscli
+    state: present
+  become: true
+
+- name: "AWS CLI configure dummy credentials for S3G tests"
+  shell: |
+    set -euo pipefail
+    aws configure set aws_access_key_id dummy
+    aws configure set aws_secret_access_key dummy
+  args:
+    executable: /bin/bash
+
+- name: "AWS CLI S3G: create test bucket '{{ s3g_bucket }}'"
+  shell: |
+    set -o pipefail
+    aws s3api create-bucket --bucket {{ s3g_bucket }} {{ s3g_endpoint_arg }} || true
+  args:
+    executable: /bin/bash
+  register: aws_create_result
+  changed_when: false
+
+- name: "AWS CLI S3G: list buckets"
+  shell: |
+    set -o pipefail
+    aws s3api list-buckets {{ s3g_endpoint_arg }}
+  args:
+    executable: /bin/bash
+  register: aws_list_result
+  changed_when: false
+
+- name: "AWS CLI S3G: put object (key put)"
+  shell: |
+    set -euo pipefail
+    dd if=/dev/zero of=/tmp/oz_s3g_smoke.bin bs=1M count=1 status=none
+    aws s3api put-object --bucket {{ s3g_bucket }} --key {{ s3g_key }} --body /tmp/oz_s3g_smoke.bin {{ s3g_endpoint_arg }}
+    rm -f /tmp/oz_s3g_smoke.bin
+  args:
+    executable: /bin/bash
+  register: aws_put_result
+  changed_when: false
+
+- name: "AWS CLI S3G: list objects"
+  shell: |
+    set -o pipefail
+    aws s3api list-objects-v2 --bucket {{ s3g_bucket }} {{ s3g_endpoint_arg }}
+  args:
+    executable: /bin/bash
+  register: aws_list_objects_result
+  changed_when: false
+
+- name: "Show AWS CLI S3G check output"
+  debug:
+    msg:
+      - "Create bucket output: {{ (aws_create_result.stdout | default('')) }}"
+      - "List buckets output: {{ (aws_list_result.stdout | default('')) }}"
+      - "Put object output: {{ (aws_put_result.stdout | default('')) }}"
+      - "List objects output: {{ (aws_list_objects_result.stdout | default('')) }}"

@@ -62,9 +62,8 @@ def get_logger(log_path: Optional[Path] = None) -> logging.Logger:
         pass
     logger = logging.getLogger("ozone_installer")
     logger.setLevel(logging.INFO)
-    # Avoid duplicate handlers if re-invoked
+    dest = log_path or (LOGS_DIR / "ansible.log")
     if not logger.handlers:
-        dest = log_path or (LOGS_DIR / "ansible.log")
         fh = logging.FileHandler(dest)
         fh.setLevel(logging.INFO)
         formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
@@ -72,6 +71,17 @@ def get_logger(log_path: Optional[Path] = None) -> logging.Logger:
         logger.addHandler(fh)
         sh = logging.StreamHandler(sys.stdout)
         logger.addHandler(sh)
+    elif log_path:
+        # Replace FileHandler when a new run-specific path is requested
+        for h in list(logger.handlers):
+            if isinstance(h, logging.FileHandler):
+                logger.removeHandler(h)
+                h.close()
+        fh = logging.FileHandler(dest)
+        fh.setLevel(logging.INFO)
+        formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
+        fh.setFormatter(formatter)
+        logger.addHandler(fh)
     return logger
 
 def parse_args(argv: List[str]) -> argparse.Namespace:
@@ -648,13 +658,18 @@ def main(argv: List[str]) -> int:
         local_path = str(candidate)
 
     # Build a human-friendly summary table of inputs before continuing
-    host_list_display = (
-        f"Masters: {masters_raw or ''} | Workers: {workers_raw or ''}"
-        if use_master_worker
-        else str(hosts_raw or "")
-    )
-    summary_rows: List[Tuple[str, str]] = [
-        ("Hosts", host_list_display),
+    if use_master_worker:
+        m_count = len(master_hosts)
+        w_count = len(worker_hosts)
+        summary_host_rows: List[Tuple[str, str]] = [
+            ("Masters", f"{m_count} host{'s' if m_count != 1 else ''}"),
+            ("Workers", f"{w_count} host{'s' if w_count != 1 else ''}"),
+        ]
+    else:
+        h_count = len(hosts)
+        summary_host_rows = [("Hosts", f"{h_count} host{'s' if h_count != 1 else ''}")]
+
+    summary_rows = summary_host_rows + [
         ("Cluster mode", cluster_mode),
         ("Ozone version", str(ozone_version)),
         ("JDK major", str(jdk_major)),
@@ -665,10 +680,12 @@ def main(argv: List[str]) -> int:
     ]
     if keyfile:
         summary_rows.append(("Key file", str(keyfile)))
-    summary_rows.extend([("Use sudo", str(bool(use_sudo))),
-                        ("Service user", str(service_user)),
-                        ("Service group", str(service_group)),
-                        ("Start after install", str(bool(start_after_install)))])
+    summary_rows.extend([
+        ("Use sudo", str(bool(use_sudo))),
+        ("Service user", str(service_user)),
+        ("Service group", str(service_group)),
+        ("Start after install", str(bool(start_after_install))),
+    ])
     if ozone_version and str(ozone_version).lower() == "local":
         summary_rows.append(("Local Ozone path", str(local_path or "")))
     if not _confirm_summary(summary_rows, yes_mode=yes):

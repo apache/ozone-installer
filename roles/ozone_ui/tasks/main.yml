@@ -20,6 +20,7 @@
     _scm_hosts_ui: "{{ groups.get('scm', []) | list }}"
     _recon_hosts_ui: "{{ groups.get('recon', []) | list }}"
     _s3g_hosts_ui: "{{ groups.get('s3g', []) | list }}"
+    _datanodes_ui: "{{ groups.get('datanodes', []) | list }}"
 
 - name: "Compute service UI URLs"
   set_fact:
@@ -29,6 +30,7 @@
       recon: "{{ (_recon_hosts_ui | length > 0) | ternary(['http://' + _recon_hosts_ui[0] + ':9888'], []) }}"
       s3g_http: "{{ _s3g_hosts_ui | map('regex_replace','^(.*)$','http://\\1:9878') | list }}"
       s3g_admin: "{{ _s3g_hosts_ui | map('regex_replace','^(.*)$','http://\\1:19878') | list }}"
+      datanode: "{{ (_datanodes_ui | length > 0) | ternary(['http://' + _datanodes_ui[0] + ':9882'], []) }}"
 
 - name: "Export UI endpoints to controller logs directory"
   copy:
