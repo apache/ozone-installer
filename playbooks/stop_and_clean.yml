@@ -26,5 +26,7 @@
       setup:
 
   roles:
-    - role: cleanup
+    - role: ozone_stop
+      tags: ["ozone_stop", "cleanup"]
+    - role: ozone_cleanup
       tags: ["cleanup"]

@@ -103,7 +103,7 @@ pip install -r requirements.txt
 
 - `ansible.cfg` (defaults and logging)
 - `playbooks/` (`cluster.yml`)
-- `roles/` (ssh_bootstrap, ozone_user, java, ozone_layout, ozone_fetch, ozone_config, ozone_service, ozone_smoke, cleanup, ozone_ui)
+- `roles/` (ssh_bootstrap, ozone_user, java, ozone_layout, ozone_fetch, ozone_config, ozone_service, ozone_smoke, ozone_cleanup, ozone_ui)
 
 ## Usage (two options)
 
