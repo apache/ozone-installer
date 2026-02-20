@@ -95,7 +95,8 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
     p.add_argument("-k", "--keyfile", help="SSH private key file (for --auth-method=key)")
     p.add_argument("-v", "--version", help="Ozone version (e.g., 2.0.0) or 'local'")
     p.add_argument("-i", "--install-dir", help=f"Install root (default: {DEFAULTS['install_base']})")
-    p.add_argument("-d", "--data-dir", help=f"Data root(s), comma-separated or brace expansion e.g. /data/ozone{{1..3}} (default: {DEFAULTS['data_base']})")
+    p.add_argument("-dd", "--data-dir", help=f"Datanode block storage dir(s), maps to hdds.datanode.dir; comma-separated or brace expansion e.g. /data/ozone{{1..3}} (default: {DEFAULTS['data_base']})")
+    p.add_argument("-md", "--metadata-dir", help=f"Metadata dir(s) for ozone.metadata.dirs, ozone.om.db.dirs, etc.; comma-separated or brace expansion (default: same as --data-dir)")
     p.add_argument("-s", "--start", action="store_true", help="Initialize and start after install")
     p.add_argument("-M", "--cluster-mode", choices=["non-ha", "ha"], help="Force cluster mode (default: auto by host count)")
     p.add_argument("-r", "--role-file", help="Role file (YAML) for HA mapping (optional)")
@@ -602,8 +603,10 @@ def main(argv: List[str]) -> int:
         install_base = args.install_dir or (last_cfg.get("install_base") if last_cfg else None) or prompt("Install directory to remove", default=DEFAULTS["install_base"], yes_mode=yes)
         data_base_raw = args.data_dir or (last_cfg.get("data_base") if last_cfg else None) or prompt("Data directory to remove", default=DEFAULTS["data_base"], yes_mode=yes)
         data_base = parse_data_dirs(data_base_raw) if data_base_raw else (data_base_raw or DEFAULTS["data_base"])
+        metadata_base_raw = getattr(args, "metadata_dir", None) or (last_cfg.get("metadata_base") if last_cfg else None) or data_base
+        metadata_base = parse_data_dirs(metadata_base_raw) if metadata_base_raw else (metadata_base_raw or data_base)
         playbook = PLAYBOOKS_DIR / "stop_and_clean.yml"
-        extra_vars = {"cluster_mode": cluster_mode, "ssh_user": ssh_user, "install_base": install_base, "data_base": data_base, "controller_logs_dir": str(LOGS_DIR)}
+        extra_vars = {"cluster_mode": cluster_mode, "ssh_user": ssh_user, "install_base": install_base, "data_base": data_base, "metadata_base": metadata_base, "controller_logs_dir": str(LOGS_DIR)}
         logger.info("Running stop and clean on cluster...")
     else:
         # Full install: resolve version, paths, service config, etc.
@@ -631,8 +634,10 @@ def main(argv: List[str]) -> int:
         install_base = args.install_dir or (last_cfg.get("install_base") if last_cfg else None) \
             or prompt("Install directory (base directory path to store ozone binaries, configs and logs)", default=DEFAULTS["install_base"], yes_mode=yes)
         data_base_raw = args.data_dir or (last_cfg.get("data_base") if last_cfg else None) \
-            or prompt("Data directory (base path(s), comma-separated or brace expansion e.g. /data/ozone{1..3})", default=DEFAULTS["data_base"], yes_mode=yes)
+            or prompt("Data directory (hdds.datanode.dir; base path(s), comma-separated or brace expansion e.g. /data/ozone{1..3})", default=DEFAULTS["data_base"], yes_mode=yes)
         data_base = parse_data_dirs(data_base_raw) if data_base_raw else (data_base_raw or DEFAULTS["data_base"])
+        metadata_base_raw = getattr(args, "metadata_dir", None) or (last_cfg.get("metadata_base") if last_cfg else None) or data_base
+        metadata_base = parse_data_dirs(metadata_base_raw) if metadata_base_raw else (metadata_base_raw or data_base)
 
         service_user = args.service_user or (last_cfg.get("service_user") if last_cfg else None) \
             or prompt("Service user name ", default=DEFAULTS["service_user"], yes_mode=yes)
@@ -694,7 +699,8 @@ def main(argv: List[str]) -> int:
             ("Ozone version", str(ozone_version)),
             ("JDK major", str(jdk_major)),
             ("Install directory", str(install_base)),
-            ("Data directory", str(data_base)),
+            ("Data directory (hdds.datanode.dir)", str(data_base)),
+            ("Metadata directory (ozone.metadata.dirs, etc.)", str(metadata_base)),
             ("SSH user", str(ssh_user)),
             ("SSH auth method", str(auth_method))
         ]
@@ -730,6 +736,7 @@ def main(argv: List[str]) -> int:
             "cluster_mode": cluster_mode,
             "install_base": install_base,
             "data_base": data_base,
+            "metadata_base": metadata_base,
             "jdk_major": jdk_major,
             "service_user": service_user,
             "service_group": service_group,

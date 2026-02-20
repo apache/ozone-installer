@@ -39,11 +39,11 @@
         state: absent
       become: true
 
-    - name: "Remove data directories"
+    - name: "Remove data and metadata directories"
       file:
         path: "{{ item }}"
         state: absent
-      loop: "{{ data_base_list | default([data_base | default('/data/ozone')]) }}"
+      loop: "{{ ((data_base_list | default([data_base | default('/data/ozone')])) + (metadata_base_list | default([metadata_base | default(data_base) | default('/data/ozone')]))) | unique }}"
       become: true
 
 

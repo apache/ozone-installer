@@ -270,7 +270,8 @@ ANSIBLE_CONFIG=ansible.cfg ansible-playbook -i inventories/dev/hosts.ini playboo
 ### Directories
 
 - Install base (`install_base`, default `/opt/ozone`): where Ozone binaries and configs live. A `current` symlink points to the active version directory.
-- Data base (`data_base`, default `/data/ozone`): where Ozone writes on‑disk metadata and Datanode data (e.g., `ozone.metadata.dirs`, `hdds.datanode.dir`). Supports comma-separated multiple directories (e.g. `/data/ozone1,/data/ozone2`) or brace expansion (e.g. `/data/ozone{1..3}` → `/data/ozone1,/data/ozone2,/data/ozone3`); each path gets `dn`, `meta`, `data/om`, etc. subdirs in `ozone-site.xml`.
+- Data base (`data_base`, `-dd`/`--data-dir`, default `/data/ozone`): Datanode block storage; maps to `hdds.datanode.dir`. Supports comma-separated multiple directories (e.g. `/data/ozone1,/data/ozone2`) or brace expansion (e.g. `/data/ozone{1..3}`); each path gets a `dn` subdir.
+- Metadata base (`metadata_base`, `-md`/`--metadata-dir`, default: same as `data_base`): Metadata storage for `ozone.metadata.dirs`, `ozone.om.db.dirs`, `ozone.scm.db.dirs`, etc. Supports comma-separated dirs or brace expansion; each path gets `meta`, `data/om`, `data/scm`, etc. subdirs.
 
 ## Components and config mapping
 
@@ -279,7 +280,8 @@ ANSIBLE_CONFIG=ansible.cfg ansible-playbook -i inventories/dev/hosts.ini playboo
   - **Legacy mode** (`-H`/`-F`): Non‑HA: first host runs OM+SCM+Recon; all hosts are DNs. HA: first three hosts serve as OM and SCM sets; all hosts are DNs; first host is Recon.
 - `ozone-site.xml` is rendered from templates based on inventory groups:
   - `ozone.scm.names`, `ozone.scm.client.address`, `ozone.om.address` or HA service IDs
-  - `ozone.metadata.dirs`, `hdds.datanode.dir`, and related paths map to `data_base` (comma-separated dirs are expanded per property)
+  - `hdds.datanode.dir` maps to `data_base` (comma-separated dirs expanded per path)
+  - `ozone.metadata.dirs`, `ozone.om.db.dirs`, `ozone.scm.db.dirs`, and related paths map to `metadata_base` (defaults to `data_base` when not specified)
   - Replication is set to ONE if DN count < 3, otherwise THREE
 
 ## Optional: S3 Gateway (S3G) and smoke

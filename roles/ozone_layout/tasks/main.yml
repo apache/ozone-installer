@@ -14,14 +14,19 @@
 # limitations under the License.
 
 ---
-- name: "Create install and data directories"
+- name: "Create install, data (hdds.datanode.dir) and metadata directories"
   file:
     path: "{{ item }}"
     state: directory
     owner: "{{ service_user }}"
     group: "{{ service_group }}"
     mode: "0755"
-  loop: "{{ [install_base] + (data_base_list | default([data_base | default('/data/ozone')]) | product(['', '/dn', '/meta']) | map('join', '') | list) }}"
+  loop: >-
+    {{
+      [install_base]
+      + (data_base_list | default([data_base | default('/data/ozone')]) | map('regex_replace', '$', '/dn') | list)
+      + (metadata_base_list | default([metadata_base | default(data_base) | default('/data/ozone')]) | product(['/meta', '/meta/dn', '/data/om', '/meta/om', '/data/scm', '/meta/scm']) | map('join') | list)
+    }}
   become: true
 
 - name: "Ensure OZONE_HOME and PATH are in profile.d/ozone.sh"
