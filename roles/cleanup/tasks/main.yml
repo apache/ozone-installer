@@ -58,10 +58,11 @@
         state: absent
       become: true
 
-    - name: "Remove data directory"
+    - name: "Remove data directories"
       file:
-        path: "{{ data_base }}"
+        path: "{{ item }}"
         state: absent
+      loop: "{{ data_base_list | default([data_base | default('/data/ozone')]) }}"
       become: true
 
 
