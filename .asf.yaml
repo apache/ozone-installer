@@ -13,10 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Enable the next-gen .asf.yaml parser
-meta:
-  nextgen: true
-
 github:
   description: "Install Apache Ozone on bare metal"
   homepage: https://ozone.apache.org
