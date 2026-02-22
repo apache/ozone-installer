@@ -30,28 +30,9 @@
   when: not install_present
   changed_when: false
 
-- name: "Perform cleanup when install_base exists"
+- name: "Remove install and data directories when install_base exists"
   when: install_present
   block:
-    - name: "Set ozone bin path"
-      set_fact:
-        ozone_bin: "{{ install_base }}/current/bin/ozone"
-
-    - name: "Kill OMs/SCMs/Datanodes/Recon (if running)"
-      shell: |
-        pkill -KILL -f "{{ item }}"
-      become: true
-      failed_when: false
-      changed_when: false
-      loop:
-        - "org.apache.hadoop.ozone.om.OzoneManagerStarter"
-        - "org.apache.hadoop.hdds.scm.server.StorageContainerManagerStarter"
-        - "org.apache.hadoop.ozone.HddsDatanodeService"
-        - "org.apache.hadoop.ozone.recon.ReconServer"
-        - "org.apache.hadoop.ozone.s3.Gateway"
-      loop_control:
-        label: "{{ item }}"
-
     - name: "Remove install directory"
       file:
         path: "{{ install_base }}"

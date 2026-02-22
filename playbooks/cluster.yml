@@ -46,7 +46,10 @@
         owner: "{{ ansible_user_id }}"
 
   roles:
-    - role: cleanup
+    - role: ozone_stop
+      tags: ["ozone_stop", "cleanup"]
+      when: (do_cleanup | default(false))
+    - role: ozone_cleanup
       tags: ["cleanup"]
       when: (do_cleanup | default(false))
     - role: ozone_user

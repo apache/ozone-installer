@@ -102,6 +102,8 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
     p.add_argument("-j", "--jdk-version", type=int, choices=[17, 21], help="JDK major version (default: 17)")
     p.add_argument("-c", "--config-dir", help="Config dir (optional, templates are used by default)")
     p.add_argument("-x", "--clean", action="store_true", help="(Reserved) Cleanup before install [not yet implemented]")
+    p.add_argument("--stop-only", action="store_true", help="Stop Ozone processes and exit (no cleanup)")
+    p.add_argument("--stop-and-clean", action="store_true", help="Stop Ozone processes, remove install and data dirs, then exit")
     p.add_argument("-l", "--ssh-user", help="SSH username (default: root)")
     p.add_argument("-S", "--use-sudo", action="store_true", help="Run remote commands via sudo (default)")
     p.add_argument("-u", "--service-user", help="Service user (default: ozone)")
@@ -551,6 +553,10 @@ def main(argv: List[str]) -> int:
         if not hosts:
             logger.error("Error: No hosts provided (-H/--host or -F/--host-file).")
             return 2
+
+    stop_only = bool(getattr(args, "stop_only", False))
+    stop_and_clean = bool(getattr(args, "stop_and_clean", False))
+
     # Decide HA vs Non-HA with user input; default depends on master count
     master_count = len(master_hosts) if use_master_worker else len(hosts)
     resume_cluster_mode = (last_cfg.get("cluster_mode") if last_cfg else None)
@@ -568,203 +574,230 @@ def main(argv: List[str]) -> int:
         logger.error("Error: HA requires at least 3 master hosts (to map 3 OMs and 3 SCMs).")
         return 2
 
-    # Resolve download base early for version selection
-    dl_url = args.dl_url or (last_cfg.get("dl_url") if last_cfg else None) or DEFAULTS["dl_url"]
-    ozone_version = args.version or (last_cfg.get("ozone_version") if last_cfg else None)
-    if not ozone_version:
-        # Try to fetch available versions from dl_url and offer selection
-        versions = fetch_available_versions(dl_url or DEFAULTS["dl_url"])
-        selected = choose_version_interactive(versions, DEFAULTS["ozone_version"], yes_mode=yes)
-        if selected:
-            ozone_version = selected
-        else:
-            # Fallback prompt if fetch failed
-            ozone_version = prompt("Ozone version (e.g., 2.1.0 | local)", default=DEFAULTS["ozone_version"], yes_mode=yes)
-    jdk_major = args.jdk_version if args.jdk_version is not None else ((last_cfg.get("jdk_major") if last_cfg else None))
-    if jdk_major is None:
-        _jdk_val = prompt("JDK major (option: 17 or 21)", default=str(DEFAULTS["jdk_major"]), yes_mode=yes)
-        try:
-            jdk_major = int(str(_jdk_val)) if _jdk_val is not None else DEFAULTS["jdk_major"]
-        except Exception:
-            jdk_major = DEFAULTS["jdk_major"]
-    install_base = args.install_dir or (last_cfg.get("install_base") if last_cfg else None) \
-        or prompt("Install directory (base directory path to store ozone binaries, configs and logs)", default=DEFAULTS["install_base"], yes_mode=yes)
-    data_base_raw = args.data_dir or (last_cfg.get("data_base") if last_cfg else None) \
-        or prompt("Data directory (base path(s), comma-separated or brace expansion e.g. /data/ozone{1..3})", default=DEFAULTS["data_base"], yes_mode=yes)
-    data_base = parse_data_dirs(data_base_raw) if data_base_raw else (data_base_raw or DEFAULTS["data_base"])
-
-    # Auth (before service user/group)
+    # Auth (needed for all modes: install, stop-only, stop-and-clean)
     auth_method = args.auth_method or (last_cfg.get("auth_method") if last_cfg else None) \
-        or prompt("SSH authentication method (option: key or password)", default="password", yes_mode=yes)
+        or prompt("SSH authentication method (key or password)", default="password", yes_mode=yes)
     if auth_method not in ("key", "password"):
         auth_method = "password"
     ssh_user = args.ssh_user or (last_cfg.get("ssh_user") if last_cfg else None) \
         or prompt("SSH username", default="root", yes_mode=yes)
-    password = args.password or ((last_cfg.get("password") if last_cfg else None))  # persisted for resume on request
+    password = args.password or (last_cfg.get("password") if last_cfg else None)
     keyfile = args.keyfile or (last_cfg.get("keyfile") if last_cfg else None)
     if auth_method == "password" and not password:
         password = prompt("SSH password", default="", secret=True, yes_mode=yes)
     if auth_method == "key" and not keyfile:
         keyfile = prompt("Path to SSH private key", default=str(Path.home() / ".ssh" / "id_ed25519"), yes_mode=yes)
-    # Ensure we don't mix methods
     if auth_method == "password":
         keyfile = None
     elif auth_method == "key":
         password = None
-    service_user = args.service_user or (last_cfg.get("service_user") if last_cfg else None) \
-        or prompt("Service user name ", default=DEFAULTS["service_user"], yes_mode=yes)
-    service_group = args.service_group or (last_cfg.get("service_group") if last_cfg else None) \
-        or prompt("Service group name", default=DEFAULTS["service_group"], yes_mode=yes)
-    dl_url = args.dl_url or (last_cfg.get("dl_url") if last_cfg else None) or DEFAULTS["dl_url"]
-    start_after_install = (args.start or (last_cfg.get("start_after_install") if last_cfg else None)
-                           or DEFAULTS["start_after_install"])
-    use_sudo = (args.use_sudo or (last_cfg.get("use_sudo") if last_cfg else None)
-                or DEFAULTS["use_sudo"])
 
-    # Local specifics (single path to local build)
-    local_path = (getattr(args, "local_path", None) or (last_cfg.get("local_path") if last_cfg else None))
-    local_shared_path = None
-    local_oz_dir = None
-    if ozone_version and ozone_version.lower() == "local":
-        # Accept a direct path to the ozone build dir (relative or absolute) and validate it.
-        # Backward-compat: if only legacy split values were saved previously, resolve them.
-        candidate = None
-        if local_path:
-            candidate = Path(local_path).expanduser().resolve()
+    # Stop modes: gather minimal config, then fall through to common inventory + playbook run
+    python_interpreter = None
+    if stop_only:
+        playbook = PLAYBOOKS_DIR / "stop.yml"
+        extra_vars = {"cluster_mode": cluster_mode, "ssh_user": ssh_user, "controller_logs_dir": str(LOGS_DIR)}
+        logger.info("Running stop only on cluster...")
+    elif stop_and_clean:
+        install_base = args.install_dir or (last_cfg.get("install_base") if last_cfg else None) or prompt("Install directory to remove", default=DEFAULTS["install_base"], yes_mode=yes)
+        data_base_raw = args.data_dir or (last_cfg.get("data_base") if last_cfg else None) or prompt("Data directory to remove", default=DEFAULTS["data_base"], yes_mode=yes)
+        data_base = parse_data_dirs(data_base_raw) if data_base_raw else (data_base_raw or DEFAULTS["data_base"])
+        playbook = PLAYBOOKS_DIR / "stop_and_clean.yml"
+        extra_vars = {"cluster_mode": cluster_mode, "ssh_user": ssh_user, "install_base": install_base, "data_base": data_base, "controller_logs_dir": str(LOGS_DIR)}
+        logger.info("Running stop and clean on cluster...")
+    else:
+        # Full install: resolve version, paths, service config, etc.
+        playbook = None  # set later
+        extra_vars = None  # set later
+
+    if not (stop_only or stop_and_clean):
+        # Resolve download base early for version selection
+        dl_url = args.dl_url or (last_cfg.get("dl_url") if last_cfg else None) or DEFAULTS["dl_url"]
+        ozone_version = args.version or (last_cfg.get("ozone_version") if last_cfg else None)
+        if not ozone_version:
+            versions = fetch_available_versions(dl_url or DEFAULTS["dl_url"])
+            selected = choose_version_interactive(versions, DEFAULTS["ozone_version"], yes_mode=yes)
+            if selected:
+                ozone_version = selected
+            else:
+                ozone_version = prompt("Ozone version (e.g., 2.1.0 | local)", default=DEFAULTS["ozone_version"], yes_mode=yes)
+        jdk_major = args.jdk_version if args.jdk_version is not None else ((last_cfg.get("jdk_major") if last_cfg else None))
+        if jdk_major is None:
+            _jdk_val = prompt("JDK major (option: 17 or 21)", default=str(DEFAULTS["jdk_major"]), yes_mode=yes)
+            try:
+                jdk_major = int(str(_jdk_val)) if _jdk_val is not None else DEFAULTS["jdk_major"]
+            except Exception:
+                jdk_major = DEFAULTS["jdk_major"]
+        install_base = args.install_dir or (last_cfg.get("install_base") if last_cfg else None) \
+            or prompt("Install directory (base directory path to store ozone binaries, configs and logs)", default=DEFAULTS["install_base"], yes_mode=yes)
+        data_base_raw = args.data_dir or (last_cfg.get("data_base") if last_cfg else None) \
+            or prompt("Data directory (base path(s), comma-separated or brace expansion e.g. /data/ozone{1..3})", default=DEFAULTS["data_base"], yes_mode=yes)
+        data_base = parse_data_dirs(data_base_raw) if data_base_raw else (data_base_raw or DEFAULTS["data_base"])
+
+        service_user = args.service_user or (last_cfg.get("service_user") if last_cfg else None) \
+            or prompt("Service user name ", default=DEFAULTS["service_user"], yes_mode=yes)
+        service_group = args.service_group or (last_cfg.get("service_group") if last_cfg else None) \
+            or prompt("Service group name", default=DEFAULTS["service_group"], yes_mode=yes)
+        dl_url = args.dl_url or (last_cfg.get("dl_url") if last_cfg else None) or DEFAULTS["dl_url"]
+        start_after_install = (args.start or (last_cfg.get("start_after_install") if last_cfg else None)
+                               or DEFAULTS["start_after_install"])
+        use_sudo = (args.use_sudo or (last_cfg.get("use_sudo") if last_cfg else None)
+                    or DEFAULTS["use_sudo"])
+
+        # Local specifics (single path to local build)
+        local_path = (getattr(args, "local_path", None) or (last_cfg.get("local_path") if last_cfg else None))
+        local_shared_path = None
+        local_oz_dir = None
+        if ozone_version and ozone_version.lower() == "local":
+            candidate = None
+            if local_path:
+                candidate = Path(local_path).expanduser().resolve()
+            else:
+                legacy_shared = (last_cfg.get("local_shared_path") if last_cfg else None)
+                legacy_dir = (last_cfg.get("local_ozone_dirname") if last_cfg else None)
+                if legacy_shared and legacy_dir:
+                    candidate = Path(legacy_shared).expanduser().resolve() / legacy_dir
+
+            def ask_for_path():
+                val = prompt("Path to local Ozone build", default="", yes_mode=yes)
+                return Path(val).expanduser().resolve() if val else None
+
+            if candidate is None or not _validate_local_ozone_dir(candidate):
+                if yes:
+                    logger.error("Error: For -v local, a valid Ozone build path containing bin/ozone is required.")
+                    return 2
+                while True:
+                    maybe = ask_for_path()
+                    if maybe and _validate_local_ozone_dir(maybe):
+                        candidate = maybe
+                        break
+                    logger.warning("Invalid path. Expected an Ozone build directory with bin/ozone. Please try again.")
+
+            local_shared_path = str(candidate.parent)
+            local_oz_dir = candidate.name
+            local_path = str(candidate)
+
+        # Build a human-friendly summary table of inputs before continuing
+        if use_master_worker:
+            m_count = len(master_hosts)
+            w_count = len(worker_hosts)
+            summary_host_rows: List[Tuple[str, str]] = [
+                ("Masters", f"{m_count} host{'s' if m_count != 1 else ''}"),
+                ("Workers", f"{w_count} host{'s' if w_count != 1 else ''}"),
+            ]
         else:
-            legacy_shared = (last_cfg.get("local_shared_path") if last_cfg else None)
-            legacy_dir = (last_cfg.get("local_ozone_dirname") if last_cfg else None)
-            if legacy_shared and legacy_dir:
-                candidate = Path(legacy_shared).expanduser().resolve() / legacy_dir
+            h_count = len(hosts)
+            summary_host_rows = [("Hosts", f"{h_count} host{'s' if h_count != 1 else ''}")]
 
-        def ask_for_path():
-            val = prompt("Path to local Ozone build", default="", yes_mode=yes)
-            return Path(val).expanduser().resolve() if val else None
-
-        if candidate is None or not _validate_local_ozone_dir(candidate):
-            if yes:
-                logger.error("Error: For -v local, a valid Ozone build path containing bin/ozone is required.")
-                return 2
-            while True:
-                maybe = ask_for_path()
-                if maybe and _validate_local_ozone_dir(maybe):
-                    candidate = maybe
-                    break
-                logger.warning("Invalid path. Expected an Ozone build directory with bin/ozone. Please try again.")
-
-        # Normalize back to shared path + dirname for Ansible vars and persistable single path
-        local_shared_path = str(candidate.parent)
-        local_oz_dir = candidate.name
-        local_path = str(candidate)
-
-    # Build a human-friendly summary table of inputs before continuing
-    if use_master_worker:
-        m_count = len(master_hosts)
-        w_count = len(worker_hosts)
-        summary_host_rows: List[Tuple[str, str]] = [
-            ("Masters", f"{m_count} host{'s' if m_count != 1 else ''}"),
-            ("Workers", f"{w_count} host{'s' if w_count != 1 else ''}"),
+        summary_rows = summary_host_rows + [
+            ("Cluster mode", cluster_mode),
+            ("Ozone version", str(ozone_version)),
+            ("JDK major", str(jdk_major)),
+            ("Install directory", str(install_base)),
+            ("Data directory", str(data_base)),
+            ("SSH user", str(ssh_user)),
+            ("SSH auth method", str(auth_method))
         ]
-    else:
-        h_count = len(hosts)
-        summary_host_rows = [("Hosts", f"{h_count} host{'s' if h_count != 1 else ''}")]
+        if keyfile:
+            summary_rows.append(("Key file", str(keyfile)))
+        summary_rows.extend([
+            ("Use sudo", str(bool(use_sudo))),
+            ("Service user", str(service_user)),
+            ("Service group", str(service_group)),
+            ("Start after install", str(bool(start_after_install))),
+        ])
+        if ozone_version and str(ozone_version).lower() == "local":
+            summary_rows.append(("Local Ozone path", str(local_path or "")))
+        if not _confirm_summary(summary_rows, yes_mode=yes):
+            logger.info("Aborted by user.")
+            return 1
 
-    summary_rows = summary_host_rows + [
-        ("Cluster mode", cluster_mode),
-        ("Ozone version", str(ozone_version)),
-        ("JDK major", str(jdk_major)),
-        ("Install directory", str(install_base)),
-        ("Data directory", str(data_base)),
-        ("SSH user", str(ssh_user)),
-        ("SSH auth method", str(auth_method))
-    ]
-    if keyfile:
-        summary_rows.append(("Key file", str(keyfile)))
-    summary_rows.extend([
-        ("Use sudo", str(bool(use_sudo))),
-        ("Service user", str(service_user)),
-        ("Service group", str(service_group)),
-        ("Start after install", str(bool(start_after_install))),
-    ])
-    if ozone_version and str(ozone_version).lower() == "local":
-        summary_rows.append(("Local Ozone path", str(local_path or "")))
-    if not _confirm_summary(summary_rows, yes_mode=yes):
-        logger.info("Aborted by user.")
-        return 1
+        python_interpreter = args.python_interpreter or (last_cfg.get("python_interpreter") if last_cfg else None)
+        if python_interpreter:
+            logger.info(f"Using Python interpreter: {python_interpreter}")
+        else:
+            logger.info("Python interpreter will be auto-detected by playbook")
 
-    # Python interpreter (optional, auto-detected if not provided)
-    python_interpreter = args.python_interpreter or (last_cfg.get("python_interpreter") if last_cfg else None)
-    if python_interpreter:
-        logger.info(f"Using Python interpreter: {python_interpreter}")
-    else:
-        logger.info("Python interpreter will be auto-detected by playbook")
-    
-    # Prepare dynamic inventory and extra-vars
-    if use_master_worker:
-        inventory_text = build_inventory(
-            master_hosts=master_hosts, worker_hosts=worker_hosts,
-            ssh_user=ssh_user, keyfile=keyfile, password=password,
-            cluster_mode=cluster_mode, python_interpreter=python_interpreter
-        )
-    else:
-        inventory_text = build_inventory(
-            hosts=hosts, ssh_user=ssh_user, keyfile=keyfile, password=password,
-            cluster_mode=cluster_mode, python_interpreter=python_interpreter
-        )
-    # Decide cleanup behavior up-front (so we can pass it into the unified play)
-    do_cleanup = False
-    if args.clean:
-        do_cleanup = True
-    else:
-        answer = prompt(f"Cleanup existing install at {install_base} (if present)? (y/N)", default="n", yes_mode=yes)
-        if str(answer).strip().lower().startswith("y"):
+        do_cleanup = False
+        if args.clean:
             do_cleanup = True
+        else:
+            answer = prompt(f"Cleanup existing install at {install_base} (if present)? (y/N)", default="n", yes_mode=yes)
+            if str(answer).strip().lower().startswith("y"):
+                do_cleanup = True
 
-    extra_vars = {
-        "cluster_mode": cluster_mode,
-        "install_base": install_base,
-        "data_base": data_base,
-        "jdk_major": jdk_major,
-        "service_user": service_user,
-        "service_group": service_group,
-        "dl_url": dl_url,
-        "ozone_version": ozone_version,
-        "start_after_install": bool(start_after_install),
-        "use_sudo": bool(use_sudo),
-        "do_cleanup": bool(do_cleanup),
-        "JAVA_MARKER": DEFAULTS["JAVA_MARKER"],
-        "ENV_MARKER": DEFAULTS["ENV_MARKER"],
-        "controller_logs_dir": str(LOGS_DIR),
-    }
-    # Add Python interpreter if explicitly specified by user
-    if python_interpreter:
-        extra_vars["ansible_python_interpreter"] = python_interpreter
-        extra_vars["ansible_python_interpreter_discovery"] = "explicit"
-    if ozone_version and ozone_version.lower() == "local":
-        extra_vars.update({
-            "local_shared_path": local_shared_path or "",
-            "local_ozone_dirname": local_oz_dir or "",
-        })
+        extra_vars = {
+            "cluster_mode": cluster_mode,
+            "install_base": install_base,
+            "data_base": data_base,
+            "jdk_major": jdk_major,
+            "service_user": service_user,
+            "service_group": service_group,
+            "dl_url": dl_url,
+            "ozone_version": ozone_version,
+            "start_after_install": bool(start_after_install),
+            "use_sudo": bool(use_sudo),
+            "do_cleanup": bool(do_cleanup),
+            "JAVA_MARKER": DEFAULTS["JAVA_MARKER"],
+            "ENV_MARKER": DEFAULTS["ENV_MARKER"],
+            "controller_logs_dir": str(LOGS_DIR),
+        }
+        if python_interpreter:
+            extra_vars["ansible_python_interpreter"] = python_interpreter
+            extra_vars["ansible_python_interpreter_discovery"] = "explicit"
+        if ozone_version and ozone_version.lower() == "local":
+            extra_vars.update({
+                "local_shared_path": local_shared_path or "",
+                "local_ozone_dirname": local_oz_dir or "",
+            })
+        playbook = PLAYBOOKS_DIR / "cluster.yml"
 
-    ask_pass = (auth_method == "password" and not password)  # whether to forward -k; we embed password if provided
+    # Common: build inventory and run playbook (same for install, stop-only, stop-and-clean)
+    inventory_text = build_inventory(
+        master_hosts=master_hosts if use_master_worker else None,
+        worker_hosts=worker_hosts if use_master_worker else None,
+        hosts=hosts if not use_master_worker else None,
+        ssh_user=ssh_user, keyfile=keyfile, password=password,
+        cluster_mode=cluster_mode,
+        python_interpreter=python_interpreter,
+    )
+    ask_pass = auth_method == "password" and not password
 
+    if stop_only or stop_and_clean:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ini", delete=False) as inv_f:
+            inv_f.write(inventory_text or "")
+            inv_path = Path(inv_f.name)
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as ev_f:
+                ev_f.write(json.dumps(extra_vars, indent=2))
+                ev_path = Path(ev_f.name)
+            try:
+                return run_playbook(playbook, inv_path, ev_path, ask_pass=ask_pass, become=True, verbose=args.verbose)
+            finally:
+                try:
+                    ev_path.unlink()
+                except Exception:
+                    pass
+        finally:
+            try:
+                inv_path.unlink()
+            except Exception:
+                pass
+
+    # Full install: persist config and run cluster playbook
     with tempfile.TemporaryDirectory() as tdir:
         inv_path = Path(tdir) / "hosts.ini"
         ev_path = Path(tdir) / "vars.json"
         inv_path.write_text(inventory_text or "", encoding="utf-8")
         ev_path.write_text(json.dumps(extra_vars, indent=2), encoding="utf-8")
-        # Persist last run configs (and use them for execution)
         try:
             os.makedirs(LOGS_DIR, exist_ok=True)
-            # Save inventory/vars for direct reuse
             persisted_inv = LOGS_DIR / "last_inventory.ini"
             persisted_ev = LOGS_DIR / "last_vars.json"
             persisted_inv.write_text(inventory_text or "", encoding="utf-8")
             persisted_ev.write_text(json.dumps(extra_vars, indent=2), encoding="utf-8")
-            # Point playbook execution to persisted files (consistent first run and reruns)
             inv_path = persisted_inv
             ev_path = persisted_ev
-            # Save effective simple config for future resume
             last_run = {
                 "host_file": host_file_path if host_file_path else None,
                 "hosts_raw": hosts_raw,
@@ -791,12 +824,8 @@ def main(argv: List[str]) -> int:
                 last_run["workers_raw"] = workers_raw
             LAST_RUN_FILE.write_text(json.dumps(last_run, indent=2), encoding="utf-8")
         except Exception:
-            # Fall back to temp files if persisting fails
             pass
-        # Roles order removed (no resume via tags)
 
-        # Install + (optional) start (single merged playbook)
-        playbook = PLAYBOOKS_DIR / "cluster.yml"
         start_at = None
         use_tags = None
         if args.resume:
