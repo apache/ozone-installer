@@ -17,7 +17,8 @@
 <configuration>
   <!-- Minimal Ozone site config; extend via group_vars if needed -->
 {% set _data_bases = data_base_list | default([data_base | default('/data/ozone')]) %}
-{% set _first_disk = _data_bases | first %}
+{% set _metadata_bases = metadata_base_list | default([metadata_base | default(data_base) | default('/data/ozone')]) %}
+{% set _first_metadata = _metadata_bases | first %}
 {% set _om_all = groups.get('om', [])| list %}
 {% set _scm_all = groups.get('scm', []) | list %}
 {% set _all_dn_count = groups.get('datanodes', []) | list | length %}
@@ -103,7 +104,7 @@
 {% endif %}
   <property>
     <name>ozone.metadata.dirs</name>
-    <value>{{ _first_disk }}/meta</value>
+    <value>{{ _first_metadata }}/meta</value>
   </property>
   <property>
     <name>hdds.datanode.dir</name>
@@ -111,23 +112,23 @@
   </property>
   <property>
     <name>dfs.container.ratis.datanode.storage.dir</name>
-    <value>{{ _first_disk }}/meta/dn</value>
+    <value>{{ _first_metadata }}/meta/dn</value>
   </property>
   <property>
     <name>ozone.om.db.dirs</name>
-    <value>{{ _first_disk }}/data/om</value>
+    <value>{{ _first_metadata }}/data/om</value>
   </property>
   <property>
     <name>ozone.om.ratis.snapshot.dir</name>
-    <value>{{ _first_disk }}/meta/om</value>
+    <value>{{ _first_metadata }}/meta/om</value>
   </property>
   <property>
     <name>ozone.scm.db.dirs</name>
-    <value>{{ _first_disk }}/data/scm</value>
+    <value>{{ _first_metadata }}/data/scm</value>
   </property>
   <property>
     <name>ozone.scm.datanode.id.dir</name>
-    <value>{{ _first_disk }}/meta/scm</value>
+    <value>{{ _first_metadata }}/meta/scm</value>
   </property>
   <property>
     <name>ozone.scm.skip.bootstrap.validation</name>
