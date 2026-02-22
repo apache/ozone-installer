@@ -105,8 +105,6 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
     p.add_argument("-x", "--clean", action="store_true", help="(Reserved) Cleanup before install [not yet implemented]")
     p.add_argument("--stop-only", action="store_true", help="Stop Ozone processes and exit (no cleanup)")
     p.add_argument("--stop-and-clean", action="store_true", help="Stop Ozone processes, remove install and data dirs, then exit")
-    p.add_argument("--stop-only", action="store_true", help="Stop Ozone processes and exit (no cleanup)")
-    p.add_argument("--stop-and-clean", action="store_true", help="Stop Ozone processes, remove install and data dirs, then exit")
     p.add_argument("-l", "--ssh-user", help="SSH username (default: root)")
     p.add_argument("-S", "--use-sudo", action="store_true", help="Run remote commands via sudo (default)")
     p.add_argument("-u", "--service-user", help="Service user (default: ozone)")
