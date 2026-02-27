@@ -26,7 +26,12 @@ import tempfile
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
+try:
+    import yaml
+except ImportError:
+    yaml = None  # type: ignore
 
 # Optional nicer interactive prompts (fallback to built-in prompts if unavailable)
 try:
@@ -285,6 +290,28 @@ def expand_braces(expr: str) -> List[str]:
         return [expr]
     pre, a, b, post = m.group(1), int(m.group(2)), int(m.group(3)), m.group(4)
     return [f"{pre}{i}{post}" for i in range(a, b + 1)]
+
+def _load_group_vars() -> Dict[str, Any]:
+    """Load inventories/dev/group_vars/all.yml if it exists. Returns {} on failure."""
+    if not yaml:
+        return {}
+    path = ANSIBLE_ROOT / "inventories" / "dev" / "group_vars" / "all.yml"
+    if not path.exists():
+        return {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        return dict(data) if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _merge_extra_vars(extra_vars: Dict[str, Any]) -> Dict[str, Any]:
+    """Merge group_vars/all.yml into extra_vars; extra_vars override group_vars."""
+    base = _load_group_vars()
+    base.update(extra_vars)
+    return base
+
 
 def parse_data_dirs(data_raw: Optional[str]) -> str:
     """
@@ -771,6 +798,7 @@ def main(argv: List[str]) -> int:
     ask_pass = auth_method == "password" and not password
 
     if stop_only or stop_and_clean:
+        extra_vars = _merge_extra_vars(extra_vars)
         with tempfile.NamedTemporaryFile(mode="w", suffix=".ini", delete=False) as inv_f:
             inv_f.write(inventory_text or "")
             inv_path = Path(inv_f.name)
@@ -792,6 +820,7 @@ def main(argv: List[str]) -> int:
                 pass
 
     # Full install: persist config and run cluster playbook
+    extra_vars = _merge_extra_vars(extra_vars)
     with tempfile.TemporaryDirectory() as tdir:
         inv_path = Path(tdir) / "hosts.ini"
         ev_path = Path(tdir) / "vars.json"

@@ -260,7 +260,7 @@ ANSIBLE_CONFIG=ansible.cfg ansible-playbook -i inventories/dev/hosts.ini playboo
 ## Notes
 
 - Idempotent where possible; runtime `ozone` init/start guarded with `creates:`.
-- JAVA_HOME and PATH are persisted for resume; runtime settings are exported via `ozone-env.sh`.
+- JAVA_HOME, OZONE_HOME, and PATH are set only for the service user (in `~/.bashrc`); runtime settings are exported via `ozone-env.sh`.
 - Local snapshot mode archives from the controller and uploads/extracts on targets using `unarchive`.
 - Logs are written to a per-run file under `logs/` named:
   - `ansible-<timestamp>-<hosts_raw_sanitized>.log`
