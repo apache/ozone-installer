@@ -39,7 +39,7 @@
     path: "{{ item }}"
   loop: "{{ java_home_candidates }}"
   register: java_candidates
-  become: false
+  become: true
 
 - name: "Set ozone_java_home from first existing candidate"
   set_fact:
