@@ -31,7 +31,7 @@ export HADOOP_CONF_DIR="{{ install_base }}/current/etc/hadoop"
 # Relaxed module access for Java 17/21 (needed by Ozone and dependencies)
 export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+$JAVA_TOOL_OPTIONS} --add-opens=java.base/jdk.internal.misc=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED"
 
-export OZONE_OPTS="{{ ozone_opts | default('-XX:ParallelGCThreads=8') }}"
+export OZONE_OPTS="{{ ozone_opts | default('-Xmx1024m -XX:ParallelGCThreads=8') }}"
 
 export OZONE_OM_USER="{{ service_user }}"
 

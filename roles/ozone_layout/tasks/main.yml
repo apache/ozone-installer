@@ -29,12 +29,6 @@
     }}
   become: true
 
-- name: "Remove system-wide ozone env (now set only for service user)"
-  file:
-    path: "/etc/profile.d/ozone.sh"
-    state: absent
-  become: true
-
 - name: "Ensure OZONE_HOME and PATH in service user shell config"
   blockinfile:
     path: "{{ (service_user == 'root') | ternary('/root', '/home/' + service_user) }}/.bashrc"
