@@ -60,6 +60,8 @@
     group: "{{ service_group }}"
   when: _src_mode != 'local'
   become: true
+  async: 300   # allow up to 5 minutes per host
+  poll: 30      # show progress every 30s so it doesn't appear hung
 
 - name: "Upstream | Link current"
   file:
@@ -106,6 +108,8 @@
     keep_newer: true
   when: _src_mode == 'local'
   become: true
+  async: 300   # allow up to 5 minutes per host
+  poll: 30      # show progress every 30s so it doesn't appear hung
 
 - name: "Local | Link current"
   file:

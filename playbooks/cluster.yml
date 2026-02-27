@@ -44,10 +44,10 @@
 
     - name: "Pre-install: Ensure Ansible remote tmp exists"
       file:
-        path: "{{ (ansible_env.TMPDIR | default('/tmp')) ~ '/.ansible-' ~ ansible_user_id }}"
+        path: "{{ (ansible_env.TMPDIR | default('/tmp')) ~ '/.ansible-' ~ (ansible_user_id | default(ansible_user) | default('ansible')) }}"
         state: directory
         mode: "0700"
-        owner: "{{ ansible_user_id }}"
+        owner: "{{ ansible_user_id | default(ansible_user) | default('ansible') }}"
 
   roles:
     - role: ozone_stop
