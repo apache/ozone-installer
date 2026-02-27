@@ -307,8 +307,12 @@ def _load_group_vars() -> Dict[str, Any]:
 
 
 def _merge_extra_vars(extra_vars: Dict[str, Any]) -> Dict[str, Any]:
-    """Merge group_vars/all.yml into extra_vars; extra_vars override group_vars."""
-    base = _load_group_vars()
+    """Merge group_vars/all.yml into extra_vars; extra_vars override group_vars.
+
+    Empty-string values from group_vars are excluded so they don't shadow
+    set_fact auto-detection (extra_vars have highest Ansible precedence).
+    """
+    base = {k: v for k, v in _load_group_vars().items() if v != ""}
     base.update(extra_vars)
     return base
 
