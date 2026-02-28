@@ -107,25 +107,13 @@
             ['', 'SCM UI:'] +
             (endpoint_urls.scm | map('regex_replace', '^', '  - ') | list) +
             ['', 'Recon UI:'] +
-            ((endpoint_urls.recon | length > 0) | ternary(
-              endpoint_urls.recon | map('regex_replace', '^', '  - ') | list,
-              ['  - Not configured']
-            )) +
+            ['  - ' ~ ((endpoint_urls.recon + ['Not configured'])[0])] +
             ['', 'S3 Gateway (HTTP):'] +
-            ((endpoint_urls.s3g_http | length > 0) | ternary(
-              ['  - ' ~ (endpoint_urls.s3g_http | first)],
-              ['  - Not configured']
-            )) +
+            ['  - ' ~ ((endpoint_urls.s3g_http + ['Not configured'])[0])] +
             ['', 'S3 Gateway (Web Admin):'] +
-            ((endpoint_urls.s3g_admin | length > 0) | ternary(
-              ['  - ' ~ (endpoint_urls.s3g_admin | first)],
-              ['  - Not configured']
-            )) +
+            ['  - ' ~ ((endpoint_urls.s3g_admin + ['Not configured'])[0])] +
             ['', 'Datanode UI:'] +
-            ((endpoint_urls.datanode | length > 0) | ternary(
-              ['  - ' ~ (endpoint_urls.datanode | first)],
-              ['  - Not configured']
-            )) +
+            ['  - ' ~ ((endpoint_urls.datanode + ['Not configured'])[0])] +
             [
               '',
               '==========================================',
