@@ -27,81 +27,6 @@
 {% set om_hosts = (_om_all[:1] if not (ha_enabled | default(false)) else _om_all) %}
 {% set scm_hosts = (_scm_all[:1] if not (ha_enabled | default(false)) else _scm_all) %}
 
-{% if scm_hosts|length > 0 %}
-  <property>
-    <name>ozone.scm.names</name>
-    <value>{{ scm_hosts | join(',') }}</value>
-  </property>
-  <property>
-    <name>ozone.scm.client.address</name>
-    <value>{{ scm_hosts | join(':9860,') }}:9860</value>
-  </property>
-  <property>
-    <name>ozone.scm.datanode.address</name>
-    <value>{{ scm_hosts | join(':9861,') }}:9861</value>
-  </property>
-{% endif %}
-{% if scm_hosts|length > 1 %}
-  <property>
-    <name>ozone.scm.primordial.node.id</name>
-    <value>{{ scm_hosts[0] }}</value>
-  </property>
-  <property>
-    <name>ozone.scm.service.ids</name>
-    <value>scmservice</value>
-  </property>
-  <property>
-    <name>ozone.scm.nodes.scmservice</name>
-    <value>{% for i in range(scm_hosts|length) %}{{ 'scm' ~ (i+1) }}{% if not loop.last %},{% endif %}{% endfor %}</value>
-  </property>
-{% for h in scm_hosts %}
-  <property>
-    <name>ozone.scm.address.scmservice.scm{{ loop.index }}</name>
-    <value>{{ h }}</value>
-  </property>
-{% endfor %}
-{% endif %}
-{% if om_hosts|length == 1 %}
-  <property>
-    <name>ozone.om.address</name>
-    <value>{{ om_hosts[0] }}:9862</value>
-  </property>
-{% elif om_hosts|length > 1 %}
-  <property>
-    <name>ozone.om.service.ids</name>
-    <value>omservice</value>
-  </property>
-  <property>
-    <name>ozone.om.nodes.omservice</name>
-    <value>{% for i in range(om_hosts|length) %}{{ 'om' ~ (i+1) }}{% if not loop.last %},{% endif %}{% endfor %}</value>
-  </property>
-{% for h in om_hosts %}
-  <property>
-    <name>ozone.om.address.omservice.om{{ loop.index }}</name>
-    <value>{{ h }}:9862</value>
-  </property>
-{% endfor %}
-{% endif %}
-{% if recon_hosts|length > 0 %}
-  <property>
-    <name>ozone.recon.http-address</name>
-    <value>{{ recon_hosts[0] }}:9888</value>
-  </property>
-  <property>
-    <name>ozone.recon.address</name>
-    <value>{{ recon_hosts[0] }}:9891</value>
-  </property>
-{% endif %}
-{% if s3g_hosts|length > 0 %}
-  <property>
-    <name>ozone.s3g.http-address</name>
-    <value>{{ s3g_hosts[0] }}:9878</value>
-  </property>
-  <property>
-    <name>ozone.s3g.webadmin.http-address</name>
-    <value>{{ s3g_hosts[0] }}:19878</value>
-  </property>
-{% endif %}
   <property>
     <name>ozone.metadata.dirs</name>
     <value>{{ _first_metadata }}/meta</value>
@@ -141,6 +66,182 @@
 {% else %}
     <value>THREE</value>
 {% endif %}
+  </property>
+{% if scm_hosts|length > 0 %}
+  <!-- SCM ports -->
+  <property>
+    <name>ozone.scm.names</name>
+    <value>{{ scm_hosts | join(',') }}</value>
+  </property>
+  <property>
+    <name>ozone.scm.client.address</name>
+    <value>{{ scm_hosts | map('regex_replace', '$', ':' ~ port_scm_client) | join(',') }}</value>
+  </property>
+  <property>
+    <name>ozone.scm.datanode.address</name>
+    <value>{{ scm_hosts | map('regex_replace', '$', ':' ~ port_scm_datanode) | join(',') }}</value>
+  </property>
+  <property>
+    <name>ozone.scm.block.client.address</name>
+    <value>{{ scm_hosts | map('regex_replace', '$', ':' ~ port_scm_block_client) | join(',') }}</value>
+  </property>
+  <property>
+    <name>ozone.scm.client.port</name>
+    <value>{{ port_scm_client }}</value>
+  </property>
+  <property>
+    <name>ozone.scm.datanode.port</name>
+    <value>{{ port_scm_datanode }}</value>
+  </property>
+  <property>
+    <name>ozone.scm.block.client.port</name>
+    <value>{{ port_scm_block_client }}</value>
+  </property>
+  <property>
+    <name>ozone.scm.http-address</name>
+    <value>0.0.0.0:{{ port_scm_http }}</value>
+  </property>
+  <property>
+    <name>ozone.scm.ratis.port</name>
+    <value>{{ port_scm_ratis }}</value>
+  </property>
+  <property>
+    <name>ozone.scm.grpc.port</name>
+    <value>{{ port_scm_grpc }}</value>
+  </property>
+{% endif %}
+{% if scm_hosts|length > 1 %}
+  <!-- SCM ports -->
+  <property>
+    <name>ozone.scm.primordial.node.id</name>
+    <value>{{ scm_hosts[0] }}</value>
+  </property>
+  <property>
+    <name>ozone.scm.service.ids</name>
+    <value>scmservice</value>
+  </property>
+  <property>
+    <name>ozone.scm.nodes.scmservice</name>
+    <value>{% for i in range(scm_hosts|length) %}{{ 'scm' ~ (i+1) }}{% if not loop.last %},{% endif %}{% endfor %}</value>
+  </property>
+{% for h in scm_hosts %}
+  <property>
+    <name>ozone.scm.address.scmservice.scm{{ loop.index }}</name>
+    <value>{{ h }}</value>
+  </property>
+{% endfor %}
+{% endif %}
+{% if om_hosts|length == 1 %}
+  <!-- OM ports -->
+  <property>
+    <name>ozone.om.address</name>
+    <value>{{ om_hosts[0] }}:{{ port_om_rpc }}</value>
+  </property>
+{% elif om_hosts|length > 1 %}
+  <!-- OM ports -->
+  <property>
+    <name>ozone.om.service.ids</name>
+    <value>omservice</value>
+  </property>
+  <property>
+    <name>ozone.om.nodes.omservice</name>
+    <value>{% for i in range(om_hosts|length) %}{{ 'om' ~ (i+1) }}{% if not loop.last %},{% endif %}{% endfor %}</value>
+  </property>
+{% for h in om_hosts %}
+  <property>
+    <name>ozone.om.address.omservice.om{{ loop.index }}</name>
+    <value>{{ h }}:{{ port_om_rpc }}</value>
+  </property>
+  <property>
+    <name>ozone.om.ratis.port.omservice.om{{ loop.index }}</name>
+    <value>{{ port_om_ratis }}</value>
+  </property>
+  <property>
+    <name>ozone.om.http-address.omservice.om{{ loop.index }}</name>
+    <value>{{ h }}:{{ port_om_http }}</value>
+  </property>
+{% endfor %}
+{% endif %}
+{% if om_hosts|length > 0 %}
+  <property>
+    <name>ozone.om.port</name>
+    <value>{{ port_om_rpc }}</value>
+  </property>
+  <property>
+    <name>ozone.om.ratis.port</name>
+    <value>{{ port_om_ratis }}</value>
+  </property>
+  <property>
+    <name>ozone.om.http-address</name>
+    <value>0.0.0.0:{{ port_om_http }}</value>
+  </property>
+  <property>
+    <name>ozone.om.grpc.port</name>
+    <value>{{ port_om_grpc }}</value>
+  </property>
+{% endif %}
+{% if recon_hosts|length > 0 %}
+  <!-- Recon ports -->
+  <property>
+    <name>ozone.recon.http-address</name>
+    <value>{{ recon_hosts[0] }}:{{ port_recon_http }}</value>
+  </property>
+  <property>
+    <name>ozone.recon.address</name>
+    <value>{{ recon_hosts[0] }}:{{ port_recon_datanode }}</value>
+  </property>
+  <property>
+    <name>ozone.recon.datanode.address</name>
+    <value>0.0.0.0:{{ port_recon_datanode }}</value>
+  </property>
+  <property>
+    <name>ozone.recon.datanode.port</name>
+    <value>{{ port_recon_datanode }}</value>
+  </property>
+{% endif %}
+{% if s3g_hosts|length > 0 %}
+  <!-- S3G ports -->
+  <property>
+    <name>ozone.s3g.http-address</name>
+    <value>{{ s3g_hosts[0] }}:{{ port_s3g_http }}</value>
+  </property>
+  <property>
+    <name>ozone.s3g.webadmin.http-address</name>
+    <value>{{ s3g_hosts[0] }}:{{ port_s3g_admin }}</value>
+  </property>
+{% endif %}
+  <!-- Datanode ports -->
+  <property>
+    <name>hdds.datanode.http-address</name>
+    <value>0.0.0.0:{{ port_datanode_http }}</value>
+  </property>
+  <property>
+    <name>hdds.datanode.ipc</name>
+    <value>0.0.0.0:{{ port_datanode_ratis_ipc }}</value>
+  </property>
+  <property>
+    <name>dfs.container.ratis.datanode.port</name>
+    <value>{{ port_datanode_ratis_server }}</value>
+  </property>
+  <property>
+    <name>dfs.container.ratis.admin.port</name>
+    <value>{{ port_datanode_ratis_admin }}</value>
+  </property>
+  <property>
+    <name>hdds.container.ipc.port</name>
+    <value>{{ port_datanode_client }}</value>
+  </property>
+  <property>
+    <name>hdds.container.ratis.server.port</name>
+    <value>{{ port_datanode_ratis_server }}</value>
+  </property>
+  <property>
+    <name>hdds.container.ratis.ipc.port</name>
+    <value>{{ port_datanode_ratis_ipc }}</value>
+  </property>
+  <property>
+    <name>hdds.datanode.replication.port</name>
+    <value>{{ port_datanode_replication }}</value>
   </property>
 </configuration>
 

@@ -25,12 +25,12 @@
 - name: "Compute service UI URLs"
   set_fact:
     endpoint_urls:
-      om: "{{ _om_hosts_ui | map('regex_replace','^(.*)$','http://\\1:9874') | list }}"
-      scm: "{{ _scm_hosts_ui | map('regex_replace','^(.*)$','http://\\1:9876') | list }}"
-      recon: "{{ (_recon_hosts_ui | length > 0) | ternary(['http://' + _recon_hosts_ui[0] + ':9888'], []) }}"
-      s3g_http: "{{ _s3g_hosts_ui | map('regex_replace','^(.*)$','http://\\1:9878') | list }}"
-      s3g_admin: "{{ _s3g_hosts_ui | map('regex_replace','^(.*)$','http://\\1:19878') | list }}"
-      datanode: "{{ (_datanodes_ui | length > 0) | ternary(['http://' + _datanodes_ui[0] + ':9882'], []) }}"
+      om: "{{ _om_hosts_ui | map('regex_replace', '^(.*)$', 'http://\\1:' ~ port_om_http) | list }}"
+      scm: "{{ _scm_hosts_ui | map('regex_replace', '^(.*)$', 'http://\\1:' ~ port_scm_http) | list }}"
+      recon: "{{ (_recon_hosts_ui | length > 0) | ternary(['http://' + _recon_hosts_ui[0] + ':' + (port_recon_http | string)], []) }}"
+      s3g_http: "{{ _s3g_hosts_ui | map('regex_replace', '^(.*)$', 'http://\\1:' ~ port_s3g_http) | list }}"
+      s3g_admin: "{{ _s3g_hosts_ui | map('regex_replace', '^(.*)$', 'http://\\1:' ~ port_s3g_admin) | list }}"
+      datanode: "{{ (_datanodes_ui | length > 0) | ternary(['http://' + _datanodes_ui[0] + ':' + (port_datanode_http | string)], []) }}"
 
 - name: "Export UI endpoints to controller logs directory"
   copy:
