@@ -49,47 +49,6 @@ Ports and service behavior follow Ozone defaults; consult the official documenta
 - SSH server enabled
 - Sudo access (if using `--use-sudo`)
 
-**⚠️ Known Issue: CentOS 8 / RHEL 8 with Python 3.6**
-
-On CentOS 8/RHEL 8, the system's `dnf` package manager may use Python 3.6 (`/usr/libexec/platform-python`), and the DNF Python module (`python3-dnf`) is only available for Python 3.6, not for Python 3.9+. 
-
-The installer works around this by using direct shell commands (e.g., `/usr/libexec/platform-python /usr/bin/dnf install`) for package installation rather than Ansible's package module.
-
-#### Python Version Requirements by OS
-
-| Operating System | Default Python | Available Versions | Installation Command |
-|-----------------|----------------|-------------------|---------------------|
-| RHEL 9+ / Rocky 9+ | Python 3.9+ ✅ | 3.11, 3.9 | `sudo yum install -y python3.11` |
-| RHEL 8 / Rocky 8 / CentOS 8 | Python 3.6 ❌ | 3.9, 3.8 (python39, python38) | `sudo yum install -y python39` |
-| CentOS 7 | Python 3.6 ❌ | 3.6 only | Must use EPEL or SCL for newer versions |
-| Ubuntu 20.04+ | Python 3.8+ ✅ | 3.11, 3.10, 3.9, 3.8 | `sudo apt-get install -y python3.11` |
-| Debian 11+ | Python 3.9+ ✅ | 3.11, 3.9 | `sudo apt-get install -y python3.11` |
-
-**Important**: If your managed nodes have Python 3.6 or older, you must upgrade:
-
-```bash
-# CentOS 8 / RHEL 8 / Rocky 8 (most common)
-sudo yum install -y python39
-# Verify: /usr/bin/python3.9 --version
-
-# RHEL 9+ / Rocky 9+
-sudo yum install -y python3.11
-# Verify: /usr/bin/python3.11 --version
-
-# Ubuntu / Debian
-sudo apt-get update && sudo apt-get install -y python3.9
-# Verify: /usr/bin/python3.9 --version
-```
-
-**Then specify the Python interpreter when running the installer:**
-```bash
-# For CentOS 8 / RHEL 8
-python3 ozone_installer.py -H hosts -v 2.0.0 --python-interpreter /usr/bin/python3.9
-
-# For RHEL 9+
-python3 ozone_installer.py -H hosts -v 2.0.0 --python-interpreter /usr/bin/python3.11
-```
-
 ### Network and access requirements
 - Controller must be on the same network as the target hosts
 - Controller requires SSH access (key or password) to all target hosts
@@ -290,3 +249,44 @@ ANSIBLE_CONFIG=ansible.cfg ansible-playbook -i inventories/dev/hosts.ini playboo
 - The smoke role can optionally install `awscli` on the first S3G host, configure dummy credentials, and create/list a test bucket against `http://localhost:9878` (for simple functional verification).
 
 
+
+**⚠️ Known Issue: CentOS 8 / RHEL 8 with Python 3.6**
+
+On CentOS 8/RHEL 8, the system's `dnf` package manager may use Python 3.6 (`/usr/libexec/platform-python`), and the DNF Python module (`python3-dnf`) is only available for Python 3.6, not for Python 3.9+. 
+
+The installer works around this by using direct shell commands (e.g., `/usr/libexec/platform-python /usr/bin/dnf install`) for package installation rather than Ansible's package module.
+
+#### Python Version Requirements by OS
+
+| Operating System | Default Python | Available Versions | Installation Command |
+|-----------------|----------------|-------------------|---------------------|
+| RHEL 9+ / Rocky 9+ | Python 3.9+ ✅ | 3.11, 3.9 | `sudo yum install -y python3.11` |
+| RHEL 8 / Rocky 8 / CentOS 8 | Python 3.6 ❌ | 3.9, 3.8 (python39, python38) | `sudo yum install -y python39` |
+| CentOS 7 | Python 3.6 ❌ | 3.6 only | Must use EPEL or SCL for newer versions |
+| Ubuntu 20.04+ | Python 3.8+ ✅ | 3.11, 3.10, 3.9, 3.8 | `sudo apt-get install -y python3.11` |
+| Debian 11+ | Python 3.9+ ✅ | 3.11, 3.9 | `sudo apt-get install -y python3.11` |
+
+**Important**: If your managed nodes have Python 3.6 or older, you must upgrade:
+
+```bash
+# CentOS 8 / RHEL 8 / Rocky 8 (most common)
+sudo yum install -y python39
+# Verify: /usr/bin/python3.9 --version
+
+# RHEL 9+ / Rocky 9+
+sudo yum install -y python3.11
+# Verify: /usr/bin/python3.11 --version
+
+# Ubuntu / Debian
+sudo apt-get update && sudo apt-get install -y python3.9
+# Verify: /usr/bin/python3.9 --version
+```
+
+**Then specify the Python interpreter when running the installer:**
+```bash
+# For CentOS 8 / RHEL 8
+python3 ozone_installer.py -H hosts -v 2.0.0 --python-interpreter /usr/bin/python3.9
+
+# For RHEL 9+
+python3 ozone_installer.py -H hosts -v 2.0.0 --python-interpreter /usr/bin/python3.11
+```
