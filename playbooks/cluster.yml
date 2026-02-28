@@ -70,7 +70,6 @@
       tags: ["ozone_config"]
     - role: ozone_service
       tags: ["ozone_service"]
-      when: start_after_install | bool
 
 - name: "Ozone Cluster Smoke Test"
   hosts: "{{ groups['om'] | list | first }}"
