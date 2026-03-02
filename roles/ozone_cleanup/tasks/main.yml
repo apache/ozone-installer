@@ -33,6 +33,17 @@
 - name: "Remove install and data directories when install_base exists"
   when: install_present
   block:
+    - name: "Remove Ozone env blocks from service user .bashrc"
+      blockinfile:
+        path: "{{ (service_user == 'root') | ternary('/root', '/home/' + service_user) }}/.bashrc"
+        marker: "# {mark} {{ item }}"
+        state: absent
+        create: false
+      loop:
+        - "{{ JAVA_MARKER | default('Apache Ozone Installer Java Home') }}"
+        - "{{ ENV_MARKER | default('Apache Ozone Installer Env') }}"
+      become: true
+
     - name: "Remove install directory"
       file:
         path: "{{ install_base }}"

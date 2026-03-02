@@ -39,7 +39,7 @@
     path: "{{ item }}"
   loop: "{{ java_home_candidates }}"
   register: java_candidates
-  become: false
+  become: true
 
 - name: "Set ozone_java_home from first existing candidate"
   set_fact:
@@ -76,12 +76,12 @@
         content: "{{ merged_all | to_nice_json }}"
         mode: "0644"
 
-- name: "Export JAVA_HOME and update PATH in profile.d/ozone.sh"
+- name: "Export JAVA_HOME and update PATH in service user shell config"
   blockinfile:
-    path: "/etc/profile.d/ozone.sh"
+    path: "{{ (service_user == 'root') | ternary('/root', '/home/' + service_user) }}/.bashrc"
     create: true
-    owner: root
-    group: root
+    owner: "{{ service_user }}"
+    group: "{{ service_group }}"
     mode: "0644"
     marker: "# {mark} {{ JAVA_MARKER }}"
     block: |

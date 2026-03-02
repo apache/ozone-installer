@@ -17,6 +17,7 @@
 install_base: "/opt/ozone"
 # data_base: single path or comma-separated paths (e.g. /data/ozone or /data/ozone1,/data/ozone2)
 data_base: "/data/ozone"
+ozone_opts: "-Xmx1024m -XX:ParallelGCThreads=8"
 CONFIG_DIR: ""   # if provided, can be used to feed additional properties via vars
 
 # Service ports — Ozone upstream defaults.
