@@ -51,7 +51,6 @@ DEFAULTS = {
     "dl_url": "https://dlcdn.apache.org/ozone",
     "JAVA_MARKER": "Apache Ozone Installer Java Home",
     "ENV_MARKER": "Apache Ozone Installer Env",
-    "start_after_install": True,
     "use_sudo": True,
 }
 
@@ -97,12 +96,12 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
     p.add_argument("-i", "--install-dir", help=f"Install root (default: {DEFAULTS['install_base']})")
     p.add_argument("-dd", "--data-dir", help=f"Datanode block storage dir(s), maps to hdds.datanode.dir; comma-separated or brace expansion e.g. /data/ozone{{1..3}} (default: {DEFAULTS['data_base']})")
     p.add_argument("-md", "--metadata-dir", help=f"Metadata dir(s) for ozone.metadata.dirs, ozone.om.db.dirs, etc.; comma-separated or brace expansion (default: same as --data-dir)")
-    p.add_argument("-s", "--start", action="store_true", help="Initialize and start after install")
     p.add_argument("-M", "--cluster-mode", choices=["non-ha", "ha"], help="Force cluster mode (default: auto by host count)")
     p.add_argument("-r", "--role-file", help="Role file (YAML) for HA mapping (optional)")
     p.add_argument("-j", "--jdk-version", type=int, choices=[17, 21], help="JDK major version (default: 17)")
     p.add_argument("-c", "--config-dir", help="Config dir (optional, templates are used by default)")
     p.add_argument("-x", "--clean", action="store_true", help="(Reserved) Cleanup before install [not yet implemented]")
+    p.add_argument("--skip-s3g", action="store_true", help="Skip S3 Gateway Installation")
     p.add_argument("--stop-only", action="store_true", help="Stop Ozone processes and exit (no cleanup)")
     p.add_argument("--stop-and-clean", action="store_true", help="Stop Ozone processes, remove install and data dirs, then exit")
     p.add_argument("-l", "--ssh-user", help="SSH username (default: root)")
@@ -384,12 +383,15 @@ def build_inventory(
     password: Optional[str] = None,
     cluster_mode: str = "non-ha",
     python_interpreter: Optional[str] = None,
+    skip_s3g: bool = False,
 ) -> str:
     """
     Returns INI inventory text for our groups: [om], [scm], [datanodes], [recon], [s3g]
 
     Either (hosts) for all-in-one, or (master_hosts, worker_hosts) for master/worker split.
     Masters run SCM, OM, Recon. Workers run Datanode, S3G.
+    When skip_s3g is True the [s3g] group is left empty, preventing S3G from being
+    installed, started, or smoke-tested.
     """
     use_master_worker = master_hosts is not None and worker_hosts is not None
     if use_master_worker:
@@ -400,7 +402,7 @@ def build_inventory(
         scm = master_hosts[:3] if cluster_mode == "ha" and len(master_hosts) >= 3 else master_hosts[:1]
         recon = [master_hosts[0]]
         dn = worker_hosts
-        s3g = worker_hosts
+        s3g = [] if skip_s3g else worker_hosts
         return _render_inv_groups(
             om=om, scm=scm, dn=dn, recon=recon, s3g=s3g,
             ssh_user=ssh_user, keyfile=keyfile, password=password, python_interpreter=python_interpreter
@@ -411,14 +413,14 @@ def build_inventory(
     if cluster_mode == "non-ha":
         h = hosts[0]
         return _render_inv_groups(
-            om=[h], scm=[h], dn=hosts, recon=[h], s3g=[h],
+            om=[h], scm=[h], dn=hosts, recon=[h], s3g=[] if skip_s3g else [h],
             ssh_user=ssh_user, keyfile=keyfile, password=password, python_interpreter=python_interpreter
         )
     om = hosts[:3] if len(hosts) >= 3 else hosts
     scm = hosts[:3] if len(hosts) >= 3 else hosts
     dn = hosts
     recon = [hosts[0]]
-    s3g = [hosts[0]]
+    s3g = [] if skip_s3g else [hosts[0]]
     return _render_inv_groups(om=om, scm=scm, dn=dn, recon=recon, s3g=s3g,
                               ssh_user=ssh_user, keyfile=keyfile, password=password, python_interpreter=python_interpreter)
 
@@ -451,7 +453,7 @@ def _render_inv_groups(om: List[dict], scm: List[dict], dn: List[dict], recon: L
     sections.append("\n")
     return "\n".join(sections)
 
-def run_playbook(playbook: Path, inventory_path: Path, extra_vars_path: Path, ask_pass: bool = False, become: bool = True, start_at_task: Optional[str] = None, tags: Optional[List[str]] = None, verbose: bool = False) -> int:
+def run_playbook(playbook: Path, inventory_path: Path, extra_vars_path: Path, ask_pass: bool = False, become: bool = True, start_at_task: Optional[str] = None, tags: Optional[List[str]] = None, skip_tags: Optional[List[str]] = None, verbose: bool = False) -> int:
     cmd = [
         "ansible-playbook",
         "-i", str(inventory_path),
@@ -468,6 +470,8 @@ def run_playbook(playbook: Path, inventory_path: Path, extra_vars_path: Path, as
         cmd += ["--start-at-task", str(start_at_task)]
     if tags:
         cmd += ["--tags", ",".join(tags)]
+    if skip_tags:
+        cmd += ["--skip-tags", ",".join(skip_tags)]
     env = os.environ.copy()
     env["ANSIBLE_CONFIG"] = str(ANSIBLE_CFG)
     # Route Ansible logs to the same file as the Python logger
@@ -644,8 +648,6 @@ def main(argv: List[str]) -> int:
         service_group = args.service_group or (last_cfg.get("service_group") if last_cfg else None) \
             or prompt("Service group name", default=DEFAULTS["service_group"], yes_mode=yes)
         dl_url = args.dl_url or (last_cfg.get("dl_url") if last_cfg else None) or DEFAULTS["dl_url"]
-        start_after_install = (args.start or (last_cfg.get("start_after_install") if last_cfg else None)
-                               or DEFAULTS["start_after_install"])
         use_sudo = (args.use_sudo or (last_cfg.get("use_sudo") if last_cfg else None)
                     or DEFAULTS["use_sudo"])
 
@@ -710,7 +712,6 @@ def main(argv: List[str]) -> int:
             ("Use sudo", str(bool(use_sudo))),
             ("Service user", str(service_user)),
             ("Service group", str(service_group)),
-            ("Start after install", str(bool(start_after_install))),
         ])
         if ozone_version and str(ozone_version).lower() == "local":
             summary_rows.append(("Local Ozone path", str(local_path or "")))
@@ -742,7 +743,7 @@ def main(argv: List[str]) -> int:
             "service_group": service_group,
             "dl_url": dl_url,
             "ozone_version": ozone_version,
-            "start_after_install": bool(start_after_install),
+            "start_after_install": True,
             "use_sudo": bool(use_sudo),
             "do_cleanup": bool(do_cleanup),
             "JAVA_MARKER": DEFAULTS["JAVA_MARKER"],
@@ -759,6 +760,9 @@ def main(argv: List[str]) -> int:
             })
         playbook = PLAYBOOKS_DIR / "cluster.yml"
 
+    skip_s3g = bool(getattr(args, "skip_s3g", False))
+    skip_tags_list = ["ozone_smoke_s3g"] if skip_s3g else None
+
     # Common: build inventory and run playbook (same for install, stop-only, stop-and-clean)
     inventory_text = build_inventory(
         master_hosts=master_hosts if use_master_worker else None,
@@ -767,6 +771,7 @@ def main(argv: List[str]) -> int:
         ssh_user=ssh_user, keyfile=keyfile, password=password,
         cluster_mode=cluster_mode,
         python_interpreter=python_interpreter,
+        skip_s3g=skip_s3g,
     )
     ask_pass = auth_method == "password" and not password
 
@@ -779,7 +784,7 @@ def main(argv: List[str]) -> int:
                 ev_f.write(json.dumps(extra_vars, indent=2))
                 ev_path = Path(ev_f.name)
             try:
-                return run_playbook(playbook, inv_path, ev_path, ask_pass=ask_pass, become=True, verbose=args.verbose)
+                return run_playbook(playbook, inv_path, ev_path, ask_pass=ask_pass, become=True, skip_tags=skip_tags_list, verbose=args.verbose)
             finally:
                 try:
                     ev_path.unlink()
@@ -820,7 +825,6 @@ def main(argv: List[str]) -> int:
                 "service_user": service_user,
                 "service_group": service_group,
                 "dl_url": dl_url,
-                "start_after_install": bool(start_after_install),
                 "use_sudo": bool(use_sudo),
                 "local_shared_path": local_shared_path or "",
                 "local_ozone_dirname": local_oz_dir or "",
@@ -849,7 +853,7 @@ def main(argv: List[str]) -> int:
                             use_tags = [role_name]
                 except Exception:
                     start_at = None
-        rc = run_playbook(playbook, inv_path, ev_path, ask_pass=ask_pass, become=True, start_at_task=start_at, tags=use_tags, verbose=args.verbose)
+        rc = run_playbook(playbook, inv_path, ev_path, ask_pass=ask_pass, become=True, start_at_task=start_at, tags=use_tags, skip_tags=skip_tags_list, verbose=args.verbose)
         if rc != 0:
             return rc
 
