@@ -15,4 +15,3 @@
 #
 s3g_bucket: demos3gbuck
 s3g_key: demos3gkey
-port_s3g_http: 19878
