@@ -54,28 +54,27 @@ ENV_MARKER: "Apache Ozone Installer Env"
 # Service ports — Ozone upstream defaults.
 # ---
 # SCM
-port_scm_client: 19860                # ozone.scm.client.port
-port_scm_datanode: 19861              # ozone.scm.datanode.port
-port_scm_block_client: 19863          # ozone.scm.block.client.port
-port_scm_http: 19876                  # ozone.scm.http-address
-port_scm_ratis: 19894                 # ozone.scm.ratis.port
-port_scm_grpc: 19895                  # ozone.scm.grpc.port
+port_scm_client: 9860                # ozone.scm.client.port
+port_scm_datanode: 9861              # ozone.scm.datanode.port
+port_scm_block_client: 9863          # ozone.scm.block.client.port
+port_scm_http: 9876                  # ozone.scm.http-address
+port_scm_ratis: 9894                 # ozone.scm.ratis.port
+port_scm_grpc: 9895                  # ozone.scm.grpc.port
 # OM
-port_om_rpc: 19862                    # ozone.om.port (binds to hostname, not 0.0.0.0)
-port_om_http: 19874                   # ozone.om.http-address
-port_om_ratis: 19872                  # ozone.om.ratis.port
-port_om_grpc: 18981                   # ozone.om.grpc.port
+port_om_rpc: 9862                    # ozone.om.port (binds to hostname, not 0.0.0.0)
+port_om_http: 9874                   # ozone.om.http-address
+port_om_ratis: 9872                  # ozone.om.ratis.port
+port_om_grpc: 8981                   # ozone.om.grpc.port
 # Recon
-port_recon_http: 19888                # ozone.recon.http-address
-port_recon_datanode: 19891            # ozone.recon.datanode.port & ozone.recon.address
+port_recon_http: 9888                # ozone.recon.http-address
+port_recon_datanode: 9891            # ozone.recon.datanode.port & ozone.recon.address
 # S3G
-port_s3g_http: 19878                  # ozone.s3g.http-address
-port_s3g_admin: 29878                 # ozone.s3g.webadmin.http-address
+port_s3g_http: 9878                  # ozone.s3g.http-address
+port_s3g_admin: 19878                # ozone.s3g.webadmin.http-address
 # Datanode
-port_datanode_http: 19882             # hdds.datanode.http-address
-port_datanode_replication: 19886      # hdds.datanode.replication.port
-port_datanode_ratis_ipc: 19858        # hdds.container.ratis.ipc.port & hdds.datanode.ipc
-port_datanode_client: 19859           # hdds.container.ipc.port (XceiverServerGrpc bind)
-                                      # DatanodeDetails.clientPort is populated from this automatically
-port_datanode_ratis_server: 19856     # dfs.container.ratis.datanode.port & hdds.container.ratis.server.port
-port_datanode_ratis_admin: 19857      # dfs.container.ratis.admin.port
+port_datanode_http: 9882             # hdds.datanode.http-address
+port_datanode_replication: 9886      # hdds.datanode.replication.port
+port_datanode_ratis_ipc: 9858        # hdds.container.ratis.ipc.port & hdds.datanode.ipc
+port_datanode_client: 9859           # hdds.container.ipc.port (XceiverServerGrpc bind) & DatanodeDetails.clientPort
+port_datanode_ratis_server: 9856     # dfs.container.ratis.datanode.port & hdds.container.ratis.server.port
+port_datanode_ratis_admin: 9857      # dfs.container.ratis.admin.port
