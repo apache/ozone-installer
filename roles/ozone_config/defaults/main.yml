@@ -19,5 +19,3 @@ install_base: "/opt/ozone"
 data_base: "/data/ozone"
 ozone_opts: "-Xmx1024m -XX:ParallelGCThreads=8"
 CONFIG_DIR: ""   # if provided, can be used to feed additional properties via vars
-
-

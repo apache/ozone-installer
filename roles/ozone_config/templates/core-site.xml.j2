@@ -24,7 +24,7 @@
 {% else %}
   <property>
     <name>fs.defaultFS</name>
-    <value>ofs://{{ om_hosts[0] }}:9862</value>
+    <value>ofs://{{ om_hosts[0] }}:{{ port_om_rpc }}</value>
   </property>
 {% endif %}
 </configuration>

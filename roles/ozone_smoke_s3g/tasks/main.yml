@@ -16,7 +16,7 @@
 ---
 - name: "Set S3G endpoint argument"
   set_fact:
-    s3g_endpoint_arg: '--endpoint-url "http://{{ inventory_hostname }}:9878"'
+    s3g_endpoint_arg: '--endpoint-url "http://{{ inventory_hostname }}:{{ port_s3g_http }}"'
 
 - name: "Install awscli on S3G host"
   package:
