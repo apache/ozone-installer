@@ -29,12 +29,12 @@
     }}
   become: true
 
-- name: "Ensure OZONE_HOME and PATH are in profile.d/ozone.sh"
+- name: "Ensure OZONE_HOME and PATH in service user shell config"
   blockinfile:
-    path: "/etc/profile.d/ozone.sh"
+    path: "{{ (service_user == 'root') | ternary('/root', '/home/' + service_user) }}/.bashrc"
     create: true
-    owner: root
-    group: root
+    owner: "{{ service_user }}"
+    group: "{{ service_group }}"
     mode: "0644"
     marker: "# {mark} {{ ENV_MARKER }}"
     block: |
