@@ -13,33 +13,63 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# -----------------------------------------------------------------------
+# Single unified playbook. All roles are gated by the 'actions' list var.
+#
+# Valid actions : clean | install | start | stop
+# Inclusivity   : 'install' implies 'start'
+#                 'clean'   implies 'stop' first
+# Exclusivity   : 'start' and 'stop' cannot be combined
+#
+# Examples:
+#   actions: [install]          → install + start
+#   actions: [start]            → start only
+#   actions: [stop]             → stop only
+#   actions: [clean]            → stop + remove all dirs
+#   actions: [clean, install]   → full clean reinstall
+# -----------------------------------------------------------------------
+
 ---
-- name: "Ozone Cluster Deployment"
+- name: "Ozone Cluster"
   hosts: all
   gather_facts: false
   vars:
-    # Expect cluster_mode to be passed in (non-ha | ha). Fallback to non-ha.
     cluster_mode: "{{ cluster_mode | default('non-ha') }}"
     ha_enabled: "{{ cluster_mode == 'ha' }}"
-    # data_base_list: comma-separated data_base expanded to list (set in pre_tasks)
+    actions: "{{ actions | default(['install']) }}"
+    # Derived convenience booleans (evaluated once here, used in role when: clauses)
+    _do_stop:    "{{ 'stop'    in actions or 'clean'   in actions }}"
+    _do_clean:   "{{ 'clean'   in actions }}"
+    _do_install: "{{ 'install' in actions }}"
+    _do_start:   "{{ 'start'   in actions or 'install' in actions }}"
+
   pre_tasks:
+
+    - name: "Validate: 'start' and 'stop' cannot be combined"
+      fail:
+        msg: "Invalid actions: 'start' and 'stop' cannot be used together."
+      when: "'start' in actions and 'stop' in actions"
+      tags: ["always"]
 
     - name: "Pre-install: Parse data_base into list (supports comma-separated dirs)"
       set_fact:
         data_base_list: "{{ ((data_base | default('')).split(',') | map('trim') | select | list) | default([data_base | default('/data/ozone')], true) }}"
+      when: _do_install | bool or _do_clean | bool
 
     - name: "Pre-install: Parse metadata_base into list (supports comma-separated dirs)"
       set_fact:
         metadata_base_list: "{{ ((metadata_base | default(data_base) | default('')).split(',') | map('trim') | select | list) | default([metadata_base | default(data_base) | default('/data/ozone')], true) }}"
+      when: _do_install | bool or _do_clean | bool
 
-    - name: "Pre-install: Gather facts"
+    - name: "Gather facts"
       setup:
+      when: _do_install | bool or _do_start | bool
 
     - name: "Pre-install: Install ACL package (needed for become_user when controller is macOS)"
       package:
         name: acl
         state: present
-      when: ansible_os_family in ['Debian', 'RedHat', 'Suse']
+      when: _do_install | bool and ansible_os_family in ['Debian', 'RedHat', 'Suse']
       become: true
 
     - name: "Pre-install: Ensure Ansible remote tmp exists"
@@ -48,31 +78,48 @@
         state: directory
         mode: "0700"
         owner: "{{ ansible_user_id | default(ansible_user) | default('ansible') }}"
+      when: _do_install | bool or _do_start | bool
 
   roles:
     - role: ozone_stop
-      tags: ["ozone_stop", "cleanup"]
-      when: (do_cleanup | default(false))
+      tags: ["ozone_stop"]
+      when: _do_stop | bool
+
     - role: ozone_cleanup
-      tags: ["cleanup"]
-      when: (do_cleanup | default(false))
+      tags: ["ozone_cleanup"]
+      when: _do_clean | bool
+
     - role: ozone_user
       tags: ["ozone_user"]
+      when: _do_install | bool
+
     - role: ssh_bootstrap
       tags: ["ssh_bootstrap"]
+      when: _do_install | bool
+
     - role: java
       tags: ["java"]
+      when: _do_install | bool
+
     - role: ozone_layout
       tags: ["ozone_layout"]
+      when: _do_install | bool
+
     - role: ozone_fetch
       tags: ["ozone_fetch"]
+      when: _do_install | bool
+
     - role: ozone_config
       tags: ["ozone_config"]
+      when: _do_install | bool
+
     - role: ozone_service
       tags: ["ozone_service"]
+      when: _do_start | bool
+
 
 - name: "Ozone Cluster Smoke Test"
-  hosts: "{{ groups['om'] | list | first }}"
+  hosts: "{{ groups['om'] | list | first if ('install' in (actions | default([])) or 'start' in (actions | default([]))) else 'never' }}"
   gather_facts: false
   roles:
     - role: ozone_ui
@@ -81,14 +128,14 @@
       tags: ["ozone_smoke_cluster"]
 
 - name: "Ozone S3G Smoke Test"
-  hosts: "{{ (groups.get('s3g', []) | list)[0] if (groups.get('s3g', []) | length) > 0 else 'never' }}"
+  hosts: "{{ ((groups.get('s3g', []) | list)[0] if (groups.get('s3g', []) | length) > 0 else 'never') if ('install' in (actions | default([])) or 'start' in (actions | default([]))) else 'never' }}"
   gather_facts: false
   roles:
     - role: ozone_smoke_s3g
       tags: ["ozone_smoke_s3g"]
 
 - name: "Display UI Endpoints"
-  hosts: "{{ groups['om'] | list | first }}"
+  hosts: "{{ groups['om'] | list | first if ('install' in (actions | default([])) or 'start' in (actions | default([]))) else 'never' }}"
   gather_facts: false
   post_tasks:
     - name: "Build UI endpoints display lines"
