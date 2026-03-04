@@ -90,7 +90,8 @@ def get_logger(log_path: Optional[Path] = None) -> logging.Logger:
 
 def parse_args(argv: List[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Ozone Ansible Installer (Python trigger) - mirrors bash installer flags"
+        description="Ozone Ansible Installer (Python trigger) - mirrors bash installer flags",
+        formatter_class=argparse.RawTextHelpFormatter,
     )
     p.add_argument("-H", "--host", help="Target host(s). Non-HA: host. HA: comma-separated or brace expansion host{1..n}")
     p.add_argument("-F", "--host-file", help="Host file. Plain list = all-in-one. Use [masters] and [workers] sections for master/worker split")
@@ -116,15 +117,6 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
             "  start    start services (cluster must already be installed)\n"
             "  stop     stop all services\n"
             "  clean    stop all services and remove all install/data dirs\n"
-            "\n'install' is inclusive of 'start' (no need to pass both).\n"
-            "'clean' is inclusive of 'stop' (services are stopped before dirs are removed).\n"
-            "'start' and 'stop' cannot be combined.\n"
-            "\nExamples:\n"
-            "  install              → install and start\n"
-            "  start                → start only\n"
-            "  stop                 → stop only\n"
-            "  clean                → stop + remove all dirs\n"
-            "  clean install        → full clean reinstall\n"
         ),
     )
     p.add_argument("--skip-s3g", action="store_true", help="Skip S3 Gateway installation and smoke test")
