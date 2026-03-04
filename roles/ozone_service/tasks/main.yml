@@ -37,7 +37,11 @@
           failed_when: scm_init_first.rc != 0
 
         - name: "Start first SCM"
-          command: "{{ ozone_bin }} --daemon start scm"
+          shell: |-
+            ulimit -n {{ ozone_nofile_limit | int }}
+            "{{ ozone_bin }}" --daemon start scm
+          args:
+            executable: "{{ service_shell | default('/bin/bash') }}"
           when: (groups['scm'] | length > 0) and (inventory_hostname == groups['scm'][0])
           register: scm_start_first
           failed_when: scm_start_first.rc != 0
@@ -51,7 +55,11 @@
           failed_when: om_init_first.rc != 0
 
         - name: "Start first OM"
-          command: "{{ ozone_bin }} --daemon start om"
+          shell: |-
+            ulimit -n {{ ozone_nofile_limit | int }}
+            "{{ ozone_bin }}" --daemon start om
+          args:
+            executable: "{{ service_shell | default('/bin/bash') }}"
           when: (groups['om'] | length > 0) and (inventory_hostname == groups['om'][0])
           register: om_start_first
           failed_when: om_start_first.rc != 0
@@ -66,7 +74,11 @@
           failed_when: scm_bootstrap_rest.rc != 0
 
         - name: "Start SCM on remaining SCMs"
-          command: "{{ ozone_bin }} --daemon start scm"
+          shell: |-
+            ulimit -n {{ ozone_nofile_limit | int }}
+            "{{ ozone_bin }}" --daemon start scm
+          args:
+            executable: "{{ service_shell | default('/bin/bash') }}"
           when: "'scm' in groups and (groups['scm'] | length > 1) and (inventory_hostname in groups['scm'][1:])"
           register: scm_start_rest
           failed_when: scm_start_rest.rc != 0
@@ -78,7 +90,11 @@
           failed_when: om_init_rest.rc != 0
 
         - name: "Start OM on remaining OMs"
-          command: "{{ ozone_bin }} --daemon start om"
+          shell: |-
+            ulimit -n {{ ozone_nofile_limit | int }}
+            "{{ ozone_bin }}" --daemon start om
+          args:
+            executable: "{{ service_shell | default('/bin/bash') }}"
           when: "'om' in groups and (groups['om'] | length > 1) and (inventory_hostname in groups['om'][1:])"
           register: om_start_rest
           failed_when: om_start_rest.rc != 0
@@ -90,7 +106,11 @@
   environment: "{{ ozone_runtime_env }}"
   block:
     - name: "Start Datanodes"
-      command: "{{ ozone_bin }} --daemon start datanode"
+      shell: |-
+        ulimit -n {{ ozone_nofile_limit | int }}
+        "{{ ozone_bin }}" --daemon start datanode
+      args:
+        executable: "{{ service_shell | default('/bin/bash') }}"
       when: inventory_hostname in (groups.get('datanodes', []))
       async: 300
       poll: 0
