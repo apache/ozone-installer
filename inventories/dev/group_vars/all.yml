@@ -33,6 +33,9 @@ data_base: "/data/ozone"
 jdk_major: 17
 ozone_java_home: ""           # autodetected if empty
 
+# Max number of open files for Ozone SCM, OM and DN  processes (ulimit -n).
+ozone_nofile_limit: 65536
+
 # Service user/group
 service_user: "ozone"
 service_group: "ozone"
